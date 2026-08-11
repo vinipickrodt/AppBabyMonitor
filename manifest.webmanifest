@@ -1,0 +1,19 @@
+{
+  "name": "Baby Monitor",
+  "short_name": "Baby",
+  "description": "Registro simples de mamadas, fraldas e sono do bebê.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f1e8",
+  "theme_color": "#f7f1e8",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./public/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

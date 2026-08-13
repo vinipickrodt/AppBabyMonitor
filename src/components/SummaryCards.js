@@ -4,18 +4,33 @@ import { createIcon } from "../ui/icons.js";
 
 export function renderSummaryCards(entries) {
   const stats = getTodayStats(entries);
+  const sleepLabel = formatSleepDuration(stats.sleepMinutes);
 
-  return createElement("section", { className: "summary-grid", attributes: { "aria-label": "Resumo do dia" } }, [
-    renderCard("Mamadas", stats.feedings, "hoje", "bottle"),
-    renderCard("Fraldas", stats.diapers, "hoje", "diaper"),
-    renderCard("Sono", formatSleepDuration(stats.sleepMinutes), "hoje", "moon")
+  return createElement("section", { className: "summary-panel", attributes: { "aria-label": "Resumo do dia" } }, [
+    createElement("article", { className: "summary-card summary-card--compact" }, [
+      createElement("div", { className: "summary-card__header" }, [
+        createElement("span", { className: "summary-card__label" }, [
+          createIcon("calendar", "icon icon--badge"),
+          createElement("span", { text: "Resumo de hoje" })
+        ]),
+        createElement("span", { className: "summary-card__caption", text: "Uma visão única do dia." })
+      ]),
+      createElement("div", { className: "summary-card__metrics" }, [
+        renderMetric("Mamadas", String(stats.feedings), "bottle"),
+        renderMetric("Fraldas", String(stats.diapers), "diaper"),
+        renderMetric("Sono", sleepLabel, "moon")
+      ]),
+      createElement("p", { className: "summary-card__footnote", text: "Tudo registrado sem ruído visual." })
+    ])
   ]);
 }
 
-function renderCard(label, value, caption, iconName) {
-  return createElement("article", { className: "summary-card" }, [
-    createElement("span", { className: "summary-card__label" }, [createIcon(iconName), document.createTextNode(label)]),
-    createElement("strong", { className: "summary-card__value", text: String(value) }),
-    createElement("span", { className: "summary-card__caption", text: caption })
+function renderMetric(label, value, iconName) {
+  return createElement("div", { className: "summary-card__metric" }, [
+    createElement("span", { className: "summary-card__metric-label" }, [
+      createIcon(iconName, "icon icon--badge"),
+      createElement("span", { text: label })
+    ]),
+    createElement("strong", { className: "summary-card__metric-value", text: value })
   ]);
 }

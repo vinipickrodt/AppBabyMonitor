@@ -29,17 +29,26 @@ const ENTRY_ICONS = {
   [EVENT_TYPES.SLEEP]: "moon"
 };
 
-export function renderEntryList(entries, { onRemove }) {
-  const recentEntries = entries.slice(0, 20);
+export function renderEntryList(entries, { onRemove, onOpenHistory, limit = 5 } = {}) {
+  const recentEntries = entries.slice(0, limit);
 
   return createElement("section", { className: "entry-section" }, [
     createElement("div", { className: "section-title" }, [
-      createElement("h2", { text: "Registros recentes" }),
-      createElement("span", { text: `${recentEntries.length} itens` })
+      createElement("div", { className: "section-title__copy" }, [
+        createElement("h2", { text: "Registros recentes" }),
+        createElement("span", { text: recentEntries.length ? `${recentEntries.length} itens` : "Nada registrado ainda" })
+      ]),
+      onOpenHistory
+        ? createElement("button", {
+            className: "inline-link-button section-title__action",
+            attributes: { type: "button" },
+            events: { click: onOpenHistory }
+          }, [iconText("calendar", "Ver histórico")])
+        : document.createDocumentFragment()
     ]),
     recentEntries.length
       ? createElement("ul", { className: "entry-list" }, recentEntries.map((entry) => renderEntry(entry, onRemove)))
-      : createElement("p", { className: "empty-state", text: "Nenhum registro ainda." })
+      : createElement("p", { className: "empty-state", text: "Ainda não há registros de hoje." })
   ]);
 }
 
@@ -53,9 +62,9 @@ function renderEntry(entry, onRemove) {
       createElement("span", { className: `entry-icon entry-icon--${entry.type}` }, [
         createIcon(ENTRY_ICONS[entry.type], "icon")
       ]),
-      createElement("div", {}, [
+      createElement("div", { className: "entry-item__content" }, [
         createElement("strong", { text: LABELS[entry.type] }),
-        createElement("span", { text: `${getEntryDetail(entry)} - ${formatTime(getEventDate(entry))}` }),
+        createElement("span", { className: "entry-item__meta", text: `${getEntryDetail(entry)} · ${formatTime(getEventDate(entry))}` }),
         notes
       ])
     ]),
@@ -75,7 +84,7 @@ function getEntryDetail(entry) {
       .filter(([, minutes]) => minutes > 0)
       .map(([side, minutes]) => `${FEEDING_LABELS.get(side) || side} ${formatSleepDuration(minutes)}`);
 
-    return parts.length ? `Total ${totalDuration} - ${parts.join(", ")}` : totalDuration;
+    return parts.length ? `Total ${totalDuration} · ${parts.join(", ")}` : totalDuration;
   }
 
   if (entry.type === EVENT_TYPES.SLEEP) {
@@ -114,7 +123,7 @@ function getDiaperDetail(entry) {
   }
 
   if (details.attentionFlags?.length) {
-    parts.push(`Atencao: ${details.attentionFlags.map((option) => ATTENTION_LABELS.get(option) || option).join(", ")}`);
+    parts.push(`Atenção: ${details.attentionFlags.map((option) => ATTENTION_LABELS.get(option) || option).join(", ")}`);
   }
 
   return parts.length ? parts.join(" · ") : "1 registro";

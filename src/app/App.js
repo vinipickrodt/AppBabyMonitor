@@ -37,7 +37,11 @@ export class App {
   }
 
   async refresh() {
-    this.state = await this.babyLogService.getDashboard();
+    const dashboard = await this.babyLogService.getDashboard();
+    this.state = {
+      ...dashboard,
+      route: this.state.route || getRouteFromLocation()
+    };
     this.render();
   }
 
@@ -45,7 +49,7 @@ export class App {
     const shouldShowNavigation = !this.sheet;
     this.root.className = shouldShowNavigation ? "app-shell app-shell--with-nav" : "app-shell";
     this.root.replaceChildren(
-      renderHeader(),
+      renderHeader(this.state.entries),
       this.renderCurrentRoute(),
       this.sheet ? this.renderSheet() : document.createDocumentFragment(),
       shouldShowNavigation
@@ -86,7 +90,8 @@ export class App {
         }
       }),
       renderEntryList(this.state.entries, {
-        onRemove: (id) => this.runAction(() => this.babyLogService.removeEntry(id))
+        onRemove: (id) => this.runAction(() => this.babyLogService.removeEntry(id)),
+        onOpenHistory: () => this.navigate("history")
       })
     ]);
   }
@@ -98,7 +103,8 @@ export class App {
         createElement("p", { text: "Todos os registros salvos ficam aqui enquanto a linha do tempo completa e os filtros entram na próxima etapa." })
       ]),
       renderEntryList(this.state.entries, {
-        onRemove: (id) => this.runAction(() => this.babyLogService.removeEntry(id))
+        onRemove: (id) => this.runAction(() => this.babyLogService.removeEntry(id)),
+        limit: this.state.entries.length
       })
     ]);
   }

@@ -55,6 +55,11 @@ const ICONS = {
     ["path", { d: "M8 3v6h8" }],
     ["path", { d: "M8 17h8" }]
   ],
+  edit: [
+    ["path", { d: "M4 20h4" }],
+    ["path", { d: "M14.5 5.5l4 4L8 20H4v-4z" }],
+    ["path", { d: "M13 6l5 5" }]
+  ],
   close: [
     ["path", { d: "M6 6l12 12" }],
     ["path", { d: "M18 6L6 18" }]

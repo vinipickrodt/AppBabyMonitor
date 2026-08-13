@@ -26,10 +26,13 @@ export class LocalStorageBabyLogRepository {
 
   async removeEntry(id) {
     const entries = await this.listEntries();
+    const removedEntry = entries.find((entry) => entry.id === id) || null;
     this.writeJson(
       ENTRIES_KEY,
       entries.filter((entry) => entry.id !== id)
     );
+
+    return removedEntry;
   }
 
   async getActiveRecords() {
@@ -43,6 +46,21 @@ export class LocalStorageBabyLogRepository {
       ...activeRecords,
       [type]: normalizeActiveRecord(activeRecord, type)
     });
+  }
+
+  async replaceState({ entries = null, activeRecords = null } = {}) {
+    const nextEntries = entries === null ? this.listEntries() : Promise.resolve(entries);
+    const nextActiveRecords = activeRecords === null ? this.getActiveRecords() : Promise.resolve(activeRecords);
+    const [resolvedEntries, resolvedActiveRecords] = await Promise.all([nextEntries, nextActiveRecords]);
+
+    if (entries !== null) {
+      this.writeJson(ENTRIES_KEY, normalizeEntries(resolvedEntries));
+    }
+
+    if (activeRecords !== null) {
+      this.writeJson(ACTIVE_RECORDS_KEY, normalizeActiveRecords(resolvedActiveRecords));
+      this.storage.removeItem(ACTIVE_SLEEP_KEY);
+    }
   }
 
   async clearActiveRecord(type) {

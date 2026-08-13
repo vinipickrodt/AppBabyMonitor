@@ -14,7 +14,7 @@ import { formatSleepDuration } from "../domain/stats.js";
 import { createElement, formatTime } from "../ui/dom.js";
 import { createIcon, iconText } from "../ui/icons.js";
 
-const LABELS = {
+const TYPE_LABELS = {
   [EVENT_TYPES.FEEDING]: "Mamada",
   [EVENT_TYPES.DIAPER]: "Fralda",
   [EVENT_TYPES.SLEEP]: "Sono"
@@ -31,7 +31,7 @@ const ENTRY_ICONS = {
   [EVENT_TYPES.SLEEP]: "moon"
 };
 
-export function renderEntryList(entries, { onRemove, onOpenHistory, limit = 5 } = {}) {
+export function renderEntryList(entries, { onRemove, onOpenHistory, limit = 5, isActionPending = false } = {}) {
   const recentEntries = entries.slice(0, limit);
 
   return createElement("section", { className: "entry-section" }, [
@@ -43,18 +43,21 @@ export function renderEntryList(entries, { onRemove, onOpenHistory, limit = 5 } 
       onOpenHistory
         ? createElement("button", {
             className: "inline-link-button section-title__action",
-            attributes: { type: "button" },
+            attributes: {
+              type: "button",
+              ...(isActionPending ? { disabled: "true" } : {})
+            },
             events: { click: onOpenHistory }
           }, [iconText("calendar", "Ver histórico")])
         : document.createDocumentFragment()
     ]),
     recentEntries.length
-      ? createElement("ul", { className: "entry-list" }, recentEntries.map((entry) => renderEntry(entry, onRemove)))
+      ? createElement("ul", { className: "entry-list" }, recentEntries.map((entry) => renderEntry(entry, onRemove, isActionPending)))
       : createElement("p", { className: "empty-state", text: "Ainda não há registros de hoje." })
   ]);
 }
 
-function renderEntry(entry, onRemove) {
+function renderEntry(entry, onRemove, isActionPending) {
   const notes = entry.notes
     ? createElement("span", { className: "entry-item__notes", text: entry.notes })
     : document.createDocumentFragment();
@@ -65,14 +68,18 @@ function renderEntry(entry, onRemove) {
         createIcon(ENTRY_ICONS[entry.type], "icon")
       ]),
       createElement("div", { className: "entry-item__content" }, [
-        createElement("strong", { text: LABELS[entry.type] }),
+        createElement("strong", { text: TYPE_LABELS[entry.type] }),
         createElement("span", { className: "entry-item__meta", text: `${getEntryDetail(entry)} · ${formatTime(getEventDate(entry))}` }),
         notes
       ])
     ]),
     createElement("button", {
       className: "icon-button",
-      attributes: { type: "button", "aria-label": `Apagar ${LABELS[entry.type]}` },
+      attributes: {
+        type: "button",
+        "aria-label": `Apagar ${TYPE_LABELS[entry.type]}`,
+        ...(isActionPending ? { disabled: "true" } : {})
+      },
       events: { click: () => onRemove(entry.id) }
     }, [iconText("trash", "Apagar")])
   ]);
@@ -117,7 +124,7 @@ function getDiaperDetail(entry) {
   }
 
   if (!details.diaperContent && details.poopAmount && details.poopAmount !== "none") {
-    parts.push(`Coco ${DIAPER_AMOUNT_LABELS.get(details.poopAmount) || details.poopAmount}`);
+    parts.push(`Cocô ${DIAPER_AMOUNT_LABELS.get(details.poopAmount) || details.poopAmount}`);
   }
 
   if (details.diaperOptions?.length) {

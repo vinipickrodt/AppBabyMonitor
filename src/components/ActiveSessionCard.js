@@ -16,7 +16,7 @@ const TYPE_LABELS = {
 
 export function renderActiveSessionCard(
   activeRecords,
-  { now = new Date(), onFinishRecord, onPauseFeeding, onResumeFeeding, onSwitchFeedingSide } = {}
+  { now = new Date(), isActionPending = false, onFinishRecord, onPauseFeeding, onResumeFeeding, onSwitchFeedingSide } = {}
 ) {
   const feedingRecord = activeRecords?.[EVENT_TYPES.FEEDING];
   const sleepRecord = activeRecords?.[EVENT_TYPES.SLEEP];
@@ -64,9 +64,12 @@ export function renderActiveSessionCard(
       ]),
       createElement("button", {
         className: "action-button action-button--active active-session-card__primary-action",
-        attributes: { type: "button" },
+        attributes: {
+          type: "button",
+          ...(isActionPending ? { disabled: "true" } : {})
+        },
         events: { click: () => onFinishRecord?.(EVENT_TYPES.SLEEP) }
-      }, [iconText("stop", "Acordou")])
+      }, [iconText("stop", "Acordar agora")])
     ]);
   }
 
@@ -111,7 +114,7 @@ export function renderActiveSessionCard(
       createElement("p", {
         className: "active-session-card__summary-line",
         attributes: { "data-active-session-current-side": "true" },
-        text: paused ? `Pausada · retome em um lado para continuar` : `Seio atual: ${currentSideLabel}`
+        text: paused ? "Pausada · retome em um lado para continuar" : `Seio atual: ${currentSideLabel}`
       }),
       createElement("p", {
         className: "active-session-card__summary-line",
@@ -126,18 +129,18 @@ export function renderActiveSessionCard(
           attributes:
             currentSide === option.value && !paused
               ? { type: "button", disabled: "true" }
-              : { type: "button" },
+              : { type: "button", ...(isActionPending ? { disabled: "true" } : {}) },
           events: { click: () => onSwitchFeedingSide?.(option.value) }
         }, [iconText(option.value === "left" ? "left" : "right", paused ? `Retomar ${option.label}` : option.label)])
       ),
       createElement("button", {
         className: paused ? "secondary-button secondary-button--selected" : "action-button action-button--active",
-        attributes: { type: "button" },
+        attributes: { type: "button", ...(isActionPending ? { disabled: "true" } : {}) },
         events: { click: () => (paused ? onResumeFeeding?.() : onPauseFeeding?.()) }
       }, [iconText(paused ? "play" : "pause", paused ? "Retomar" : "Pausar")]),
       createElement("button", {
         className: "action-button action-button--active",
-        attributes: { type: "button" },
+        attributes: { type: "button", ...(isActionPending ? { disabled: "true" } : {}) },
         events: { click: () => onFinishRecord?.(EVENT_TYPES.FEEDING) }
       }, [iconText("stop", "Finalizar mamada")])
     ]),

@@ -11,6 +11,7 @@ import { createIcon, iconText } from "../ui/icons.js";
 
 export function renderQuickActions({
   activeRecords,
+  isActionPending = false,
   onStartRecord,
   onStartFeeding,
   onSwitchFeedingSide,
@@ -27,6 +28,8 @@ export function renderQuickActions({
   return createElement("section", { className: "quick-actions", attributes: { "aria-label": "Ações rápidas" } }, [
     renderPrimaryAction({
       feedingRecord,
+      sleepRecord,
+      isActionPending,
       onStartFeeding,
       onSwitchFeedingSide,
       onPauseFeeding,
@@ -40,6 +43,7 @@ export function renderQuickActions({
         description: diaperRecord ? `Em andamento desde ${formatTime(diaperRecord.startedAt)}` : "Anotar troca ou observação rápida.",
         icon: "diaper",
         activeRecord: diaperRecord,
+        isActionPending,
         onStartRecord,
         onFinishRecord,
         onOpenSheet
@@ -47,9 +51,15 @@ export function renderQuickActions({
       renderSecondaryAction({
         type: EVENT_TYPES.SLEEP,
         title: "Iniciar sono",
-        description: sleepRecord ? `Sono ativo desde ${formatTime(sleepRecord.startedAt)}` : "Começar cronômetro.",
+        description: sleepRecord
+          ? `Sono ativo desde ${formatTime(sleepRecord.startedAt)}`
+          : feedingRecord
+            ? `Mamada ativa desde ${formatTime(feedingRecord.startedAt)}`
+            : "Começar cronômetro.",
         icon: "moon",
         activeRecord: sleepRecord,
+        conflictRecord: feedingRecord,
+        isActionPending,
         onStartRecord,
         onFinishRecord,
         onOpenSheet
@@ -57,7 +67,10 @@ export function renderQuickActions({
     ]),
     createElement("button", {
       className: "inline-link-button quick-actions__manual",
-      attributes: { type: "button" },
+      attributes: {
+        type: "button",
+        ...(isActionPending ? { disabled: "true" } : {})
+      },
       events: { click: () => onOpenSheet({ type: EVENT_TYPES.FEEDING, mode: "duration" }) }
     }, [iconText("edit", "Registro manual")])
   ]);
@@ -65,6 +78,8 @@ export function renderQuickActions({
 
 function renderPrimaryAction({
   feedingRecord,
+  sleepRecord,
+  isActionPending,
   onStartFeeding,
   onSwitchFeedingSide,
   onPauseFeeding,
@@ -72,21 +87,35 @@ function renderPrimaryAction({
   onFinishFeeding
 }) {
   if (!feedingRecord) {
+    const sleepActive = Boolean(sleepRecord);
+    const intro = sleepActive
+      ? "Encerrar sono e iniciar mamada."
+      : "Escolha o lado e comece em um toque.";
+
     return createElement("article", { className: "quick-actions__card quick-actions__card--primary" }, [
       createElement("div", { className: "quick-actions__header" }, [
         createElement("span", { className: "quick-actions__title" }, [
           createIcon("bottle", "icon icon--badge"),
           createElement("strong", { text: "Iniciar mamada" })
         ]),
-        createElement("span", { className: "quick-actions__description", text: "Escolha o lado e comece em um toque." })
+        createElement("span", { className: "quick-actions__description", text: sleepActive ? `Sono ativo desde ${formatTime(sleepRecord.startedAt)}` : intro })
       ]),
+      sleepActive
+        ? createElement("p", { className: "quick-actions__status", text: intro })
+        : document.createDocumentFragment(),
       createElement("div", { className: "quick-actions__button-row" }, [
         ...FEEDING_SIDES.map((option) =>
           createElement("button", {
             className: "secondary-button secondary-button--start",
-            attributes: { type: "button" },
+            attributes: {
+              type: "button",
+              ...(isActionPending ? { disabled: "true" } : {}),
+              title: sleepActive
+                ? `${intro} ${option.label.toLowerCase()}`
+                : option.label
+            },
             events: { click: () => onStartFeeding(option.value) }
-          }, [iconText(option.value === "left" ? "left" : "right", option.label)])
+          }, [iconText(option.value === "left" ? "left" : "right", sleepActive ? `${option.label}` : option.label)])
         )
       ])
     ]);
@@ -114,7 +143,7 @@ function renderPrimaryAction({
     createElement("p", {
       className: "quick-actions__status",
       text: paused
-        ? `Pausa ativa · retome em um lado para continuar`
+        ? "Pausa ativa · retome em um lado para continuar"
         : `${currentSideLabel} · sessão ${formatSleepDuration(metrics.sessionMinutes)} · efetivo ${formatSleepDuration(metrics.effectiveMinutes)}`
     }),
     createElement("div", { className: "quick-actions__button-row" }, [
@@ -124,31 +153,43 @@ function renderPrimaryAction({
           attributes:
             currentSide === option.value && !paused
               ? { type: "button", disabled: "true" }
-              : { type: "button" },
+              : { type: "button", ...(isActionPending ? { disabled: "true" } : {}) },
           events: { click: () => onSwitchFeedingSide(option.value) }
         }, [iconText(option.value === "left" ? "left" : "right", paused ? `Retomar ${option.label}` : option.label)])
       ),
       createElement("button", {
         className: paused ? "secondary-button secondary-button--selected" : "action-button action-button--active",
-        attributes: { type: "button" },
+        attributes: { type: "button", ...(isActionPending ? { disabled: "true" } : {}) },
         events: { click: () => (paused ? onResumeFeeding() : onPauseFeeding()) }
       }, [iconText(pauseIcon, pauseLabel)]),
       createElement("button", {
         className: "action-button action-button--active",
-        attributes: { type: "button" },
+        attributes: { type: "button", ...(isActionPending ? { disabled: "true" } : {}) },
         events: { click: () => onFinishFeeding() }
       }, [iconText("stop", "Finalizar mamada")])
     ])
   ]);
 }
 
-function renderSecondaryAction({ type, title, description, icon, activeRecord, onStartRecord, onFinishRecord, onOpenSheet }) {
+function renderSecondaryAction({
+  type,
+  title,
+  description,
+  icon,
+  activeRecord,
+  conflictRecord,
+  isActionPending,
+  onStartRecord,
+  onFinishRecord,
+  onOpenSheet
+}) {
   const isSleep = type === EVENT_TYPES.SLEEP;
   const isDiaper = type === EVENT_TYPES.DIAPER;
   const active = Boolean(activeRecord);
+  const conflict = Boolean(conflictRecord && isSleep);
   const displayTitle = isSleep && active ? "Sono em andamento" : title;
-  const label = active && isSleep ? "Acordar agora" : isDiaper ? "Registrar fralda" : title;
-  const iconName = active && isSleep ? "stop" : isDiaper ? "plus" : "play";
+  const label = active && isSleep ? "Acordar agora" : conflict ? "Encerrar mamada e iniciar sono" : isDiaper ? "Registrar fralda" : title;
+  const iconName = active && isSleep ? "stop" : isDiaper ? "plus" : conflict ? "moon" : "play";
 
   return createElement("article", { className: "quick-actions__card quick-actions__card--secondary" }, [
     createElement("div", { className: "quick-actions__header" }, [
@@ -159,8 +200,11 @@ function renderSecondaryAction({ type, title, description, icon, activeRecord, o
       createElement("span", { className: "quick-actions__description", text: description })
     ]),
     createElement("button", {
-      className: active ? "action-button action-button--active" : "action-button action-button--secondary",
-      attributes: { type: "button" },
+      className: active || conflict ? "action-button action-button--active" : "action-button action-button--secondary",
+      attributes: {
+        type: "button",
+        ...(isActionPending ? { disabled: "true" } : {})
+      },
       events: {
         click: () => {
           if (isSleep && active) {

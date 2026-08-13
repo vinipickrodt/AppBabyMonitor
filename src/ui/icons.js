@@ -64,6 +64,10 @@ const ICONS = {
     ["path", { d: "M14.5 5.5l4 4L8 20H4v-4z" }],
     ["path", { d: "M13 6l5 5" }]
   ],
+  undo: [
+    ["path", { d: "M9 14l-4-4 4-4" }],
+    ["path", { d: "M5 10h8a6 6 0 1 1 0 12h-1" }]
+  ],
   close: [
     ["path", { d: "M6 6l12 12" }],
     ["path", { d: "M18 6L6 18" }]

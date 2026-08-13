@@ -5,12 +5,14 @@ import { renderQuickActions } from "../components/QuickActions.js";
 import { renderEntryList } from "../components/EntryList.js";
 import { renderActiveSessionCard } from "../components/ActiveSessionCard.js";
 import { renderRecordSheet } from "../components/RecordSheet.js";
+import { renderSnackbar } from "../components/Snackbar.js";
 import { EVENT_TYPES, FEEDING_SIDES, getCurrentFeedingSide, getFeedingSessionMetrics } from "../domain/babyEvents.js";
 import { formatElapsedDuration, formatSleepDuration } from "../domain/stats.js";
 import { createElement, formatTime } from "../ui/dom.js";
 
 const DEFAULT_ROUTE = "today";
 const VALID_ROUTES = new Set(MAIN_ROUTES.map((route) => route.id));
+const SNACKBAR_DURATION_MS = 5000;
 
 export class App {
   constructor(root, { babyLogService }) {
@@ -20,10 +22,13 @@ export class App {
       entries: [],
       activeRecords: {},
       route: getRouteFromLocation(),
-      now: new Date()
+      now: new Date(),
+      snackbar: null,
+      isActionPending: false
     };
     this.sheet = null;
     this.clockId = null;
+    this.snackbarTimerId = null;
     this.onRouteChange = () => {
       this.state.route = getRouteFromLocation();
       this.state.now = new Date();
@@ -53,7 +58,9 @@ export class App {
     this.state = {
       ...dashboard,
       route: this.state.route || getRouteFromLocation(),
-      now: new Date()
+      now: new Date(),
+      snackbar: this.state.snackbar,
+      isActionPending: this.state.isActionPending
     };
     this.render();
   }
@@ -61,17 +68,36 @@ export class App {
   render() {
     const shouldShowNavigation = !this.sheet;
     this.root.className = shouldShowNavigation ? "app-shell app-shell--with-nav" : "app-shell";
+    this.root.toggleAttribute("aria-busy", this.state.isActionPending);
     this.root.replaceChildren(
       renderHeader(this.state.entries),
       renderActiveSessionCard(this.state.activeRecords, {
         now: this.state.now,
-        onFinishRecord: (type) => this.runAction(() => this.babyLogService.finishRecord(type)),
-        onPauseFeeding: () => this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING)),
-        onResumeFeeding: () => this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING)),
-        onSwitchFeedingSide: (side) => this.runAction(() => this.babyLogService.switchFeedingSide(side))
+        isActionPending: this.state.isActionPending,
+        onFinishRecord: (type) =>
+          this.runAction(() => this.babyLogService.finishRecord(type), {
+            successMessage: type === EVENT_TYPES.SLEEP ? "Sono encerrado." : "Mamada encerrada.",
+            undoEntry: true
+          }),
+        onPauseFeeding: () =>
+          this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING), {
+            successMessage: "Mamada pausada."
+          }),
+        onResumeFeeding: () =>
+          this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING), {
+            successMessage: "Mamada retomada."
+          }),
+        onSwitchFeedingSide: (side) =>
+          this.runAction(() => this.babyLogService.switchFeedingSide(side), {
+            successMessage: "Lado da mamada atualizado."
+          })
       }),
       this.renderCurrentRoute(),
       this.sheet ? this.renderSheet() : document.createDocumentFragment(),
+      renderSnackbar(this.state.snackbar, {
+        onAction: () => this.handleSnackbarAction(),
+        onClose: () => this.clearSnackbar()
+      }),
       shouldShowNavigation
         ? renderBottomNavigation({
             currentRoute: this.state.route,
@@ -79,6 +105,7 @@ export class App {
           })
         : document.createDocumentFragment()
     );
+    this.applyBusyState();
   }
 
   renderCurrentRoute() {
@@ -102,21 +129,56 @@ export class App {
       renderSummaryCards(this.state.entries),
       renderQuickActions({
         activeRecords: this.state.activeRecords,
-        onStartRecord: (type) => this.runAction(() => this.babyLogService.startRecord(type)),
+        isActionPending: this.state.isActionPending,
+        onStartRecord: (type) =>
+          this.runAction(() => this.babyLogService.startRecord(type), {
+            successMessage: getStartRecordMessage(type, this.state.activeRecords)
+          }),
         onStartFeeding: (side) =>
-          this.runAction(() => this.babyLogService.startRecord(EVENT_TYPES.FEEDING, { details: { feedingSide: side } })),
-        onSwitchFeedingSide: (side) => this.runAction(() => this.babyLogService.switchFeedingSide(side)),
-        onPauseFeeding: () => this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING)),
-        onResumeFeeding: () => this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING)),
-        onFinishFeeding: () => this.runAction(() => this.babyLogService.finishRecord(EVENT_TYPES.FEEDING)),
-        onFinishRecord: (type) => this.runAction(() => this.babyLogService.finishRecord(type)),
+          this.runAction(
+            () => this.babyLogService.startRecord(EVENT_TYPES.FEEDING, { details: { feedingSide: side } }),
+            {
+              successMessage: getStartFeedingSuccessMessage(this.state.activeRecords[EVENT_TYPES.SLEEP], side)
+            }
+          ),
+        onSwitchFeedingSide: (side) =>
+          this.runAction(() => this.babyLogService.switchFeedingSide(side), {
+            successMessage: "Lado da mamada atualizado."
+          }),
+        onPauseFeeding: () =>
+          this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING), {
+            successMessage: "Mamada pausada."
+          }),
+        onResumeFeeding: () =>
+          this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING), {
+            successMessage: "Mamada retomada."
+          }),
+        onFinishFeeding: () =>
+          this.runAction(() => this.babyLogService.finishRecord(EVENT_TYPES.FEEDING), {
+            successMessage: "Mamada encerrada.",
+            undoEntry: true
+          }),
+        onFinishRecord: (type) =>
+          this.runAction(() => this.babyLogService.finishRecord(type), {
+            successMessage: type === EVENT_TYPES.SLEEP ? "Sono encerrado." : "Registro encerrado.",
+            undoEntry: true
+          }),
         onOpenSheet: (sheet) => {
+          if (this.state.isActionPending) {
+            return;
+          }
+
           this.sheet = sheet;
           this.render();
         }
       }),
       renderEntryList(this.state.entries, {
-        onRemove: (id) => this.runAction(() => this.babyLogService.removeEntry(id)),
+        isActionPending: this.state.isActionPending,
+        onRemove: (id) =>
+          this.runAction(() => this.babyLogService.removeEntry(id), {
+            successMessage: "Registro apagado.",
+            undoRemovedEntry: true
+          }),
         onOpenHistory: () => this.navigate("history")
       })
     ]);
@@ -129,7 +191,12 @@ export class App {
         createElement("p", { text: "Todos os registros salvos ficam aqui enquanto a linha do tempo completa e os filtros entram na próxima etapa." })
       ]),
       renderEntryList(this.state.entries, {
-        onRemove: (id) => this.runAction(() => this.babyLogService.removeEntry(id)),
+        isActionPending: this.state.isActionPending,
+        onRemove: (id) =>
+          this.runAction(() => this.babyLogService.removeEntry(id), {
+            successMessage: "Registro apagado.",
+            undoRemovedEntry: true
+          }),
         limit: this.state.entries.length
       })
     ]);
@@ -161,7 +228,12 @@ export class App {
   renderSheet() {
     return renderRecordSheet(this.sheet, {
       activeRecord: this.state.activeRecords[this.sheet.type],
+      isActionPending: this.state.isActionPending,
       onCancel: () => {
+        if (this.state.isActionPending) {
+          return;
+        }
+
         this.sheet = null;
         this.render();
       },
@@ -174,18 +246,59 @@ export class App {
       return;
     }
 
+    if (this.state.isActionPending) {
+      return;
+    }
+
     window.location.hash = route;
   }
 
-  async runAction(action) {
-    await action();
-    await this.refresh();
+  async runAction(
+    action,
+    { successMessage = null, undoEntry = false, undoRemovedEntry = false, refreshOnSuccess = true } = {}
+  ) {
+    if (this.state.isActionPending) {
+      this.showSnackbar("Já existe uma ação em andamento.", { variant: "info" });
+      return null;
+    }
+
+    this.setActionPending(true);
+
+    try {
+      const result = await action();
+
+      if (successMessage && result !== null && result !== undefined) {
+        this.showSnackbar(successMessage, {
+          variant: "success",
+          actionLabel: undoEntry || undoRemovedEntry ? "Desfazer" : null,
+          onAction:
+            undoEntry && result
+              ? () => this.undoCreatedEntry(result)
+              : undoRemovedEntry && result
+                ? () => this.undoRemovedEntry(result)
+                : null
+        });
+      }
+
+      if (refreshOnSuccess) {
+        await this.refresh();
+      }
+      return result;
+    } catch (error) {
+      this.showSnackbar(formatActionError(error), { variant: "error" });
+      return null;
+    } finally {
+      this.setActionPending(false);
+    }
   }
 
   async submitSheet(payload) {
     const sheet = this.sheet;
+    if (!sheet) {
+      return;
+    }
 
-    await this.runAction(() => {
+    const success = await this.runAction(() => {
       if (sheet.mode === "start") {
         return this.babyLogService.startRecord(sheet.type, {
           details: payload.details
@@ -207,10 +320,100 @@ export class App {
         notes: payload.notes,
         details: payload.details
       });
+    }, {
+      successMessage: getSheetSuccessMessage(sheet),
+      undoEntry: sheet.mode !== "start",
+      refreshOnSuccess: false
     });
 
+    if (success === null) {
+      return;
+    }
+
     this.sheet = null;
+    await this.refresh();
+  }
+
+  async undoCreatedEntry(entry) {
+    await this.runAction(() => this.babyLogService.removeEntry(entry.id), {
+      successMessage: "Registro desfeito."
+    });
+  }
+
+  async undoRemovedEntry(entry) {
+    await this.runAction(() => this.babyLogService.restoreEntry(entry), {
+      successMessage: "Registro restaurado."
+    });
+  }
+
+  showSnackbar(message, { variant = "success", actionLabel = null, onAction = null } = {}) {
+    if (this.snackbarTimerId) {
+      window.clearTimeout(this.snackbarTimerId);
+      this.snackbarTimerId = null;
+    }
+
+    this.state.snackbar = {
+      id: crypto.randomUUID(),
+      message,
+      variant,
+      actionLabel,
+      onAction
+    };
+
     this.render();
+
+    this.snackbarTimerId = window.setTimeout(() => {
+      this.clearSnackbar();
+    }, SNACKBAR_DURATION_MS);
+  }
+
+  clearSnackbar() {
+    if (this.snackbarTimerId) {
+      window.clearTimeout(this.snackbarTimerId);
+      this.snackbarTimerId = null;
+    }
+
+    if (!this.state.snackbar) {
+      return;
+    }
+
+    this.state.snackbar = null;
+    this.render();
+  }
+
+  async handleSnackbarAction() {
+    const snackbar = this.state.snackbar;
+
+    if (!snackbar?.onAction) {
+      this.clearSnackbar();
+      return;
+    }
+
+    this.clearSnackbar();
+    await snackbar.onAction();
+  }
+
+  setActionPending(isPending) {
+    this.state.isActionPending = isPending;
+    this.applyBusyState();
+  }
+
+  applyBusyState() {
+    this.root.toggleAttribute("aria-busy", this.state.isActionPending);
+    this.root.querySelectorAll("button").forEach((button) => {
+      if (this.state.isActionPending) {
+        if (!button.disabled) {
+          button.dataset.appDisabled = "true";
+          button.disabled = true;
+        }
+        return;
+      }
+
+      if (button.dataset.appDisabled === "true") {
+        button.disabled = false;
+        delete button.dataset.appDisabled;
+      }
+    });
   }
 
   updateActiveSessionClock() {
@@ -233,7 +436,7 @@ export class App {
     this.state.now = now;
     const durationLabel = formatElapsedDuration(activeRecord.startedAt, now);
     const startLabel = formatTime(activeRecord.startedAt);
-    const footerAction = type === EVENT_TYPES.SLEEP ? "Acordou" : "Pausar, trocar lado ou finalizar";
+    const footerAction = type === EVENT_TYPES.SLEEP ? "Acordar agora" : "Pausar, trocar lado ou finalizar";
 
     activeSession.setAttribute(
       "aria-label",
@@ -291,4 +494,81 @@ function getRouteFromLocation() {
   const route = window.location.hash.replace(/^#\/?/, "");
 
   return VALID_ROUTES.has(route) ? route : DEFAULT_ROUTE;
+}
+
+function getSheetSuccessMessage(sheet) {
+  if (sheet.mode === "start") {
+    return sheet.type === EVENT_TYPES.SLEEP ? "Sono iniciado." : "Mamada iniciada.";
+  }
+
+  if (sheet.mode === "finish") {
+    return sheet.type === EVENT_TYPES.SLEEP ? "Sono encerrado." : "Mamada encerrada.";
+  }
+
+  if (sheet.mode === "duration") {
+    return sheet.type === EVENT_TYPES.SLEEP ? "Sono registrado." : "Mamada registrada.";
+  }
+
+  return "Registro salvo.";
+}
+
+function getStartSuccessMessage(type) {
+  if (type === EVENT_TYPES.SLEEP) {
+    return "Sono iniciado.";
+  }
+
+  if (type === EVENT_TYPES.FEEDING) {
+    return "Mamada iniciada.";
+  }
+
+  return "Registro iniciado.";
+}
+
+function getStartRecordMessage(type, activeRecords) {
+  const feedingActive = Boolean(activeRecords[EVENT_TYPES.FEEDING]);
+  const sleepActive = Boolean(activeRecords[EVENT_TYPES.SLEEP]);
+
+  if (type === EVENT_TYPES.SLEEP && feedingActive) {
+    return "Mamada encerrada e sono iniciado.";
+  }
+
+  if (type === EVENT_TYPES.FEEDING && sleepActive) {
+    return "Sono encerrado e mamada iniciada.";
+  }
+
+  return getStartSuccessMessage(type);
+}
+
+function getStartFeedingSuccessMessage(sleepRecord, side) {
+  if (!sleepRecord) {
+    return `Mamada iniciada no ${side === "left" ? "seio esquerdo" : "seio direito"}.`;
+  }
+
+  return `Sono encerrado e mamada iniciada no ${side === "left" ? "seio esquerdo" : "seio direito"}.`;
+}
+
+function formatActionError(error) {
+  if (!error) {
+    return "Não foi possível concluir a ação.";
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (/Selecione um seio válido/i.test(message)) {
+    return "Não foi possível iniciar a mamada: selecione um seio válido.";
+  }
+
+  if (/conteúdo da fralda/i.test(message)) {
+    return "Não foi possível salvar: selecione o conteúdo da fralda.";
+  }
+
+  if (/peso da fralda/i.test(message)) {
+    return "Não foi possível salvar: o peso da fralda deve ser um número maior ou igual a zero.";
+  }
+
+  if (/duração/i.test(message)) {
+    return message.startsWith("Não foi possível") ? message : `Não foi possível salvar: ${message}`;
+  }
+
+  return message.startsWith("Não foi possível") ? message : `Não foi possível concluir a ação: ${message}`;
 }

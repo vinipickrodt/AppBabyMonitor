@@ -17,7 +17,7 @@ const LABELS = {
   [EVENT_TYPES.SLEEP]: "sono"
 };
 
-export function renderRecordSheet(sheet, { activeRecord, onCancel, onSubmit }) {
+export function renderRecordSheet(sheet, { activeRecord, isActionPending = false, onCancel, onSubmit }) {
   const includeNotes = sheet.mode !== "start";
   const notes = createElement("textarea", {
     attributes: {
@@ -82,7 +82,7 @@ export function renderRecordSheet(sheet, { activeRecord, onCancel, onSubmit }) {
     createElement("div", { className: "sheet-actions" }, [
       createElement("button", {
         className: "secondary-button",
-        attributes: { type: "button" },
+        attributes: { type: "button", ...(isActionPending ? { disabled: "true" } : {}) },
         events: { click: onCancel }
       }, [iconText("close", "Cancelar")]),
       saveButton
@@ -92,6 +92,10 @@ export function renderRecordSheet(sheet, { activeRecord, onCancel, onSubmit }) {
   const form = createElement("form", { className: "record-sheet" }, fields);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+
+    if (isActionPending) {
+      return;
+    }
 
     const durationMinutes = state.durationFields
       ? parseDurationPartsToMinutes(state.durationFields.hoursInput.value, state.durationFields.minutesInput.value)

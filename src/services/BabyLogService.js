@@ -6,7 +6,6 @@ import {
   createBabyEvent,
   getCurrentFeedingSide,
   getLastFeedingSide,
-  getFeedingSessionMetrics,
   isValidFeedingSide,
   isValidDiaperContent,
   sortNewestFirst
@@ -32,6 +31,7 @@ export class BabyLogService {
   async startRecord(type, { details = {} } = {}, now = new Date()) {
     this.ensureDurationType(type);
     const activeRecords = await this.repository.getActiveRecords();
+    const conflictingType = this.getConflictingActiveType(type, activeRecords);
     const startedAt = now.toISOString();
     const activeRecord = {
       type,
@@ -42,8 +42,25 @@ export class BabyLogService {
       details: this.createActiveDetails(type, details, startedAt)
     };
 
-    await this.repository.setActiveRecord(type, activeRecord);
-    return { ...activeRecords, [type]: activeRecord };
+    if (!conflictingType) {
+      await this.repository.setActiveRecord(type, activeRecord);
+      return { ...activeRecords, [type]: activeRecord };
+    }
+
+    const completedRecord = this.buildCompletedActiveRecord(conflictingType, activeRecords[conflictingType], now);
+    const nextActiveRecords = {
+      ...activeRecords,
+      [type]: activeRecord
+    };
+
+    delete nextActiveRecords[conflictingType];
+
+    await this.commitState({
+      entries: [completedRecord],
+      activeRecords: nextActiveRecords
+    });
+
+    return nextActiveRecords;
   }
 
   async pauseRecord(type, now = new Date()) {
@@ -95,7 +112,6 @@ export class BabyLogService {
 
     const currentSide = getCurrentFeedingSide(activeRecord);
     const openSegment = activeRecord.details?.feedingSegments?.findLast((segment) => !segment.endedAt);
-    const switchedAt = now.toISOString();
 
     if (currentSide === side && openSegment) {
       return activeRecord;
@@ -122,18 +138,24 @@ export class BabyLogService {
 
     const minutes = Math.max(1, Math.round((now - new Date(activeRecord.startedAt)) / 60000));
     const details = this.closeActiveDetails(type, activeRecord.details, now);
-    await this.repository.clearActiveRecord(type);
+    const completedEntry = createBabyEvent({
+      type,
+      startedAt: activeRecord.startedAt,
+      endedAt: now,
+      durationMinutes: minutes,
+      notes,
+      details
+    });
 
-    return this.repository.saveEntry(
-      createBabyEvent({
-        type,
-        startedAt: activeRecord.startedAt,
-        endedAt: now,
-        durationMinutes: minutes,
-        notes,
-        details
-      })
-    );
+    const nextActiveRecords = { ...activeRecords };
+    delete nextActiveRecords[type];
+
+    await this.commitState({
+      entries: [completedEntry],
+      activeRecords: nextActiveRecords
+    });
+
+    return completedEntry;
   }
 
   async addRecordWithDuration(type, durationMinutes, { notes = "", details = {} } = {}, now = new Date()) {
@@ -156,7 +178,7 @@ export class BabyLogService {
 
   async addInstantRecord(type, { notes = "", details = {} } = {}, now = new Date()) {
     if (type !== EVENT_TYPES.DIAPER) {
-      throw new Error("Esse tipo de registro precisa de duracao.");
+      throw new Error("Esse tipo de registro precisa de duração.");
     }
 
     if (!this.hasValidDiaperSelection(details)) {
@@ -178,15 +200,19 @@ export class BabyLogService {
     return this.repository.removeEntry(id);
   }
 
+  async restoreEntry(entry) {
+    return this.repository.saveEntry(entry);
+  }
+
   ensureDurationType(type) {
     if (!DURATION_EVENT_TYPES.includes(type)) {
-      throw new Error("Tipo de registro nao aceita inicio e fim.");
+      throw new Error("Tipo de registro não aceita início e fim.");
     }
   }
 
   ensureFeedingSide(side) {
     if (!isValidFeedingSide(side)) {
-      throw new Error("Selecione um seio valido.");
+      throw new Error("Selecione um seio válido.");
     }
   }
 
@@ -202,8 +228,8 @@ export class BabyLogService {
     }
 
     const legacyDiaperTypes = Array.isArray(details.diaperTypes) ? details.diaperTypes : [];
-    const peeSelected = details.peeAmount && details.peeAmount !== "none" || legacyDiaperTypes.includes("pee");
-    const poopSelected = details.poopAmount && details.poopAmount !== "none" || legacyDiaperTypes.includes("poop");
+    const peeSelected = (details.peeAmount && details.peeAmount !== "none") || legacyDiaperTypes.includes("pee");
+    const poopSelected = (details.poopAmount && details.poopAmount !== "none") || legacyDiaperTypes.includes("poop");
 
     return Boolean(peeSelected || poopSelected);
   }
@@ -319,7 +345,7 @@ export class BabyLogService {
     }
 
     if (!isValidFeedingSide(nextSide)) {
-      throw new Error("Selecione um seio valido.");
+      throw new Error("Selecione um seio válido.");
     }
 
     return {
@@ -338,5 +364,78 @@ export class BabyLogService {
         ]
       }
     };
+  }
+
+  async commitState({ entries = [], activeRecords = null } = {}) {
+    if (typeof this.repository.replaceState === "function") {
+      const existingEntries = entries.length ? await this.repository.listEntries() : null;
+      const mergedEntries = existingEntries ? [...entries, ...existingEntries] : null;
+
+      await this.repository.replaceState({
+        entries: mergedEntries,
+        activeRecords
+      });
+      return;
+    }
+
+    await Promise.all(entries.map((entry) => this.repository.saveEntry(entry)));
+
+    if (activeRecords === null) {
+      return;
+    }
+
+    const currentActiveRecords = await this.repository.getActiveRecords();
+    const currentTypes = new Set(Object.keys(currentActiveRecords));
+    const nextTypes = new Set(Object.keys(activeRecords));
+
+    await Promise.all(
+      [...currentTypes]
+        .filter((type) => !nextTypes.has(type))
+        .map((type) => this.repository.clearActiveRecord(type))
+    );
+
+    await Promise.all(
+      Object.entries(activeRecords).map(([type, record]) => this.repository.setActiveRecord(type, record))
+    );
+  }
+
+  getConflictingActiveType(nextType, activeRecords) {
+    if (nextType === EVENT_TYPES.FEEDING && activeRecords[EVENT_TYPES.SLEEP]) {
+      return EVENT_TYPES.SLEEP;
+    }
+
+    if (nextType === EVENT_TYPES.SLEEP && activeRecords[EVENT_TYPES.FEEDING]) {
+      return EVENT_TYPES.FEEDING;
+    }
+
+    return null;
+  }
+
+  buildCompletedActiveRecord(type, activeRecord, now) {
+    if (!activeRecord) {
+      return null;
+    }
+
+    const minutes = Math.max(1, Math.round((now - new Date(activeRecord.startedAt)) / 60000));
+
+    if (type === EVENT_TYPES.FEEDING) {
+      return createBabyEvent({
+        type,
+        startedAt: activeRecord.startedAt,
+        endedAt: now,
+        durationMinutes: minutes,
+        notes: "",
+        details: this.closeActiveDetails(type, activeRecord.details, now)
+      });
+    }
+
+    return createBabyEvent({
+      type,
+      startedAt: activeRecord.startedAt,
+      endedAt: now,
+      durationMinutes: minutes,
+      notes: "",
+      details: {}
+    });
   }
 }

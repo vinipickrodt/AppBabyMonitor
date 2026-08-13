@@ -1,6 +1,7 @@
 .summary-card,
 .quick-actions,
-.entry-section {
+.entry-section,
+.placeholder-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.86);
@@ -417,6 +418,17 @@
 
 .entry-section {
   padding: 14px;
+}
+
+.placeholder-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+}
+
+.placeholder-card span {
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .section-title {

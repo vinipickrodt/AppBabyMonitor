@@ -5,8 +5,11 @@ export const EVENT_TYPES = {
 };
 
 export const EVENT_STATUS = {
+  ACTIVE: "active",
   COMPLETED: "completed"
 };
+
+export const BABY_EVENT_VERSION = 1;
 
 export const DURATION_EVENT_TYPES = [EVENT_TYPES.FEEDING, EVENT_TYPES.SLEEP];
 
@@ -101,9 +104,12 @@ export function createBabyEvent({
   type,
   startedAt = new Date(),
   endedAt = null,
-  durationMinutes = null,
   notes = "",
-  details = {}
+  details = {},
+  babyId = null,
+  createdBy = null,
+  updatedAt = null,
+  version = BABY_EVENT_VERSION
 }) {
   if (!Object.values(EVENT_TYPES).includes(type)) {
     throw new Error(`Tipo de evento invalido: ${type}`);
@@ -113,8 +119,9 @@ export function createBabyEvent({
   const normalizedEndedAt = endedAt ? new Date(endedAt) : normalizedStartedAt;
   const isDurationEvent = DURATION_EVENT_TYPES.includes(type);
   const normalizedDuration = isDurationEvent
-    ? Number(durationMinutes ?? Math.round((normalizedEndedAt - normalizedStartedAt) / 60000))
+    ? Number(Math.round((normalizedEndedAt - normalizedStartedAt) / 60000))
     : null;
+  const createdAt = normalizedEndedAt.toISOString();
 
   if (isDurationEvent && (!Number.isFinite(normalizedDuration) || normalizedDuration <= 0)) {
     throw new Error("A duracao deve ser maior que zero.");
@@ -129,7 +136,11 @@ export function createBabyEvent({
     durationMinutes: isDurationEvent ? Math.round(normalizedDuration) : null,
     notes: String(notes || "").trim(),
     details: normalizeDetails(type, details),
-    createdAt: normalizedEndedAt.toISOString()
+    createdAt,
+    babyId,
+    createdBy,
+    updatedAt: updatedAt ? new Date(updatedAt).toISOString() : createdAt,
+    version
   };
 }
 

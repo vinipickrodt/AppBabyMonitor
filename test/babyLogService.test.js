@@ -70,6 +70,54 @@ test("BabyLogService permite mamada ativa sem seio selecionado", async () => {
   assert.deepEqual(dashboard.entries[0].details.feedingSegments, []);
 });
 
+test("BabyLogService cria registros ativos com metadados minimos", async () => {
+  const repository = new MemoryBabyLogRepository();
+  const service = new BabyLogService(repository);
+
+  const activeRecords = await service.startRecord(
+    EVENT_TYPES.FEEDING,
+    { details: { feedingSide: "left" } },
+    new Date("2026-08-11T10:00:00.000Z")
+  );
+
+  assert.deepEqual(activeRecords[EVENT_TYPES.FEEDING], {
+    type: EVENT_TYPES.FEEDING,
+    startedAt: "2026-08-11T10:00:00.000Z",
+    status: "active",
+    updatedAt: "2026-08-11T10:00:00.000Z",
+    version: 1,
+    details: {
+      feedingSegments: [
+        {
+          side: "left",
+          startedAt: "2026-08-11T10:00:00.000Z"
+        }
+      ]
+    }
+  });
+});
+
+test("BabyLogService salva eventos concluidos com metadados futuros", async () => {
+  const repository = new MemoryBabyLogRepository();
+  const service = new BabyLogService(repository);
+
+  await service.addRecordWithDuration(
+    EVENT_TYPES.SLEEP,
+    30,
+    { notes: "Soneca curta" },
+    new Date("2026-08-11T10:30:00.000Z")
+  );
+
+  const dashboard = await service.getDashboard();
+
+  assert.equal(dashboard.entries[0].status, "completed");
+  assert.equal(dashboard.entries[0].babyId, null);
+  assert.equal(dashboard.entries[0].createdBy, null);
+  assert.equal(dashboard.entries[0].createdAt, "2026-08-11T10:30:00.000Z");
+  assert.equal(dashboard.entries[0].updatedAt, "2026-08-11T10:30:00.000Z");
+  assert.equal(dashboard.entries[0].version, 1);
+});
+
 test("BabyLogService registra sono por duracao manual", async () => {
   const repository = new MemoryBabyLogRepository();
   const service = new BabyLogService(repository);

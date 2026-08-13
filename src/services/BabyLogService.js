@@ -1,5 +1,7 @@
 import {
+  BABY_EVENT_VERSION,
   DURATION_EVENT_TYPES,
+  EVENT_STATUS,
   EVENT_TYPES,
   createBabyEvent,
   getCurrentFeedingSide,
@@ -31,6 +33,9 @@ export class BabyLogService {
     const activeRecord = {
       type,
       startedAt,
+      status: EVENT_STATUS.ACTIVE,
+      updatedAt: startedAt,
+      version: BABY_EVENT_VERSION,
       details: this.createActiveDetails(type, details, startedAt)
     };
 
@@ -76,6 +81,9 @@ export class BabyLogService {
 
     const nextActiveRecord = {
       ...activeRecord,
+      status: activeRecord.status || EVENT_STATUS.ACTIVE,
+      updatedAt: switchedAt,
+      version: activeRecord.version || BABY_EVENT_VERSION,
       details: {
         ...activeRecord.details,
         feedingSegments: nextSegments

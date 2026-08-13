@@ -5,6 +5,28 @@ const ICONS = {
     ["path", { d: "M10 10h.01" }],
     ["path", { d: "M14 10h.01" }]
   ],
+  home: [
+    ["path", { d: "M3 11l9-8 9 8" }],
+    ["path", { d: "M5 10v10h14V10" }],
+    ["path", { d: "M10 20v-6h4v6" }]
+  ],
+  calendar: [
+    ["path", { d: "M8 2v4" }],
+    ["path", { d: "M16 2v4" }],
+    ["rect", { x: "3", y: "4", width: "18", height: "18", rx: "2" }],
+    ["path", { d: "M3 10h18" }]
+  ],
+  chart: [
+    ["path", { d: "M4 19V5" }],
+    ["path", { d: "M4 19h16" }],
+    ["rect", { x: "7", y: "12", width: "3", height: "4" }],
+    ["rect", { x: "12", y: "8", width: "3", height: "8" }],
+    ["rect", { x: "17", y: "5", width: "3", height: "11" }]
+  ],
+  user: [
+    ["circle", { cx: "12", cy: "8", r: "4" }],
+    ["path", { d: "M5 21a7 7 0 0 1 14 0" }]
+  ],
   bottle: [
     ["path", { d: "M10 2h4" }],
     ["path", { d: "M11 2v3l-3 4v10a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3V9l-3-4V2" }],

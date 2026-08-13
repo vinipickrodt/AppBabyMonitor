@@ -3,8 +3,11 @@ import { renderHeader } from "../components/Header.js";
 import { renderSummaryCards } from "../components/SummaryCards.js";
 import { renderQuickActions } from "../components/QuickActions.js";
 import { renderEntryList } from "../components/EntryList.js";
+import { renderActiveSessionCard } from "../components/ActiveSessionCard.js";
 import { renderRecordSheet } from "../components/RecordSheet.js";
-import { createElement } from "../ui/dom.js";
+import { EVENT_TYPES, FEEDING_SIDES, getCurrentFeedingSide, getFeedingSideTotals } from "../domain/babyEvents.js";
+import { formatElapsedDuration, formatSleepDuration } from "../domain/stats.js";
+import { createElement, formatTime } from "../ui/dom.js";
 
 const DEFAULT_ROUTE = "today";
 const VALID_ROUTES = new Set(MAIN_ROUTES.map((route) => route.id));
@@ -16,11 +19,14 @@ export class App {
     this.state = {
       entries: [],
       activeRecords: {},
-      route: getRouteFromLocation()
+      route: getRouteFromLocation(),
+      now: new Date()
     };
     this.sheet = null;
+    this.clockId = null;
     this.onRouteChange = () => {
       this.state.route = getRouteFromLocation();
+      this.state.now = new Date();
       this.sheet = null;
       this.render();
     };
@@ -33,6 +39,12 @@ export class App {
       history.replaceState(null, "", `#${DEFAULT_ROUTE}`);
     }
 
+    if (!this.clockId) {
+      this.clockId = window.setInterval(() => {
+        this.updateActiveSessionClock();
+      }, 1000);
+    }
+
     this.refresh();
   }
 
@@ -40,7 +52,8 @@ export class App {
     const dashboard = await this.babyLogService.getDashboard();
     this.state = {
       ...dashboard,
-      route: this.state.route || getRouteFromLocation()
+      route: this.state.route || getRouteFromLocation(),
+      now: new Date()
     };
     this.render();
   }
@@ -50,6 +63,13 @@ export class App {
     this.root.className = shouldShowNavigation ? "app-shell app-shell--with-nav" : "app-shell";
     this.root.replaceChildren(
       renderHeader(this.state.entries),
+      renderActiveSessionCard(this.state.activeRecords, {
+        now: this.state.now,
+        onOpenSheet: (sheet) => {
+          this.sheet = sheet;
+          this.render();
+        }
+      }),
       this.renderCurrentRoute(),
       this.sheet ? this.renderSheet() : document.createDocumentFragment(),
       shouldShowNavigation
@@ -185,6 +205,70 @@ export class App {
 
     this.sheet = null;
     this.render();
+  }
+
+  updateActiveSessionClock() {
+    const activeSession = this.root.querySelector("[data-active-session='true']");
+
+    if (!activeSession) {
+      return;
+    }
+
+    const feedingRecord = this.state.activeRecords[EVENT_TYPES.FEEDING];
+    const sleepRecord = this.state.activeRecords[EVENT_TYPES.SLEEP];
+    const activeRecord = feedingRecord || sleepRecord;
+
+    if (!activeRecord) {
+      return;
+    }
+
+    const type = feedingRecord ? EVENT_TYPES.FEEDING : EVENT_TYPES.SLEEP;
+    const now = new Date();
+    this.state.now = now;
+    const durationLabel = formatElapsedDuration(activeRecord.startedAt, now);
+    const startLabel = formatTime(activeRecord.startedAt);
+    const footerAction = type === EVENT_TYPES.SLEEP ? "Finalizar sono" : "Finalizar mamada";
+
+    activeSession.setAttribute(
+      "aria-label",
+      `${type === EVENT_TYPES.SLEEP ? "Sono ativo" : "Mamada ativa"}, iniciada às ${startLabel}. Duração atual ${durationLabel}. Toque para ${
+        type === EVENT_TYPES.SLEEP ? "finalizar o sono" : "finalizar a mamada"
+      }.`
+    );
+
+    const durationNode = this.root.querySelector("[data-active-session-duration='true']");
+    if (durationNode) {
+      durationNode.textContent = durationLabel;
+    }
+
+    const footerActionNode = this.root.querySelector("[data-active-session-footer-action='true']");
+    if (footerActionNode) {
+      footerActionNode.textContent = footerAction;
+    }
+
+    if (type === EVENT_TYPES.FEEDING) {
+      const currentSide = getCurrentFeedingSide(activeRecord);
+      const currentSideLabel = currentSide
+        ? FEEDING_SIDES.find((option) => option.value === currentSide)?.label || "Seio não informado"
+        : "Sem seio selecionado";
+      const totals = getFeedingSideTotals(activeRecord, now);
+
+      const currentSideNode = this.root.querySelector("[data-active-session-current-side='true']");
+      if (currentSideNode) {
+        currentSideNode.textContent = `Seio atual: ${currentSideLabel}`;
+      }
+
+      const totalsNode = this.root.querySelector("[data-active-session-feeding-totals='true']");
+      if (totalsNode) {
+        totalsNode.textContent = `Totais: Esquerdo ${formatSleepDuration(totals.left)} · Direito ${formatSleepDuration(totals.right)}`;
+      }
+      return;
+    }
+
+    const sleepSummaryNode = this.root.querySelector("[data-active-session-sleep-summary='true']");
+    if (sleepSummaryNode) {
+      sleepSummaryNode.textContent = `Dormindo há ${durationLabel}`;
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EVENT_TYPES } from "../src/domain/babyEvents.js";
-import { formatSleepDuration, getTodayStats } from "../src/domain/stats.js";
+import { formatElapsedDuration, formatSleepDuration, getTodayStats } from "../src/domain/stats.js";
 
 test("getTodayStats soma apenas registros do dia", () => {
   const now = new Date("2026-08-11T12:00:00.000Z");
@@ -22,6 +22,14 @@ test("getTodayStats soma apenas registros do dia", () => {
 test("formatSleepDuration formata minutos e horas", () => {
   assert.equal(formatSleepDuration(45), "45min");
   assert.equal(formatSleepDuration(125), "2h 05min");
+});
+
+test("formatElapsedDuration mostra segundos e hora em andamento", () => {
+  const now = new Date("2026-08-11T12:34:56.000Z");
+
+  assert.equal(formatElapsedDuration("2026-08-11T12:34:51.000Z", now), "5s");
+  assert.equal(formatElapsedDuration("2026-08-11T12:33:51.000Z", now), "1min 05s");
+  assert.equal(formatElapsedDuration("2026-08-11T10:32:51.000Z", now), "2h 02min 05s");
 });
 
 function event(id, type, durationMinutes, createdAt) {

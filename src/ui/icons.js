@@ -45,6 +45,10 @@ const ICONS = {
     ["path", { d: "M5 12h14" }]
   ],
   play: [["path", { d: "M8 5v14l11-7-11-7z" }]],
+  pause: [
+    ["path", { d: "M8 5v14" }],
+    ["path", { d: "M16 5v14" }]
+  ],
   stop: [["path", { d: "M6 6h12v12H6z" }]],
   clock: [
     ["circle", { cx: "12", cy: "12", r: "9" }],

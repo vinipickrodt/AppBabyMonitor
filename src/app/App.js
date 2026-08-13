@@ -5,7 +5,7 @@ import { renderQuickActions } from "../components/QuickActions.js";
 import { renderEntryList } from "../components/EntryList.js";
 import { renderActiveSessionCard } from "../components/ActiveSessionCard.js";
 import { renderRecordSheet } from "../components/RecordSheet.js";
-import { EVENT_TYPES, FEEDING_SIDES, getCurrentFeedingSide, getFeedingSideTotals } from "../domain/babyEvents.js";
+import { EVENT_TYPES, FEEDING_SIDES, getCurrentFeedingSide, getFeedingSessionMetrics } from "../domain/babyEvents.js";
 import { formatElapsedDuration, formatSleepDuration } from "../domain/stats.js";
 import { createElement, formatTime } from "../ui/dom.js";
 
@@ -65,10 +65,10 @@ export class App {
       renderHeader(this.state.entries),
       renderActiveSessionCard(this.state.activeRecords, {
         now: this.state.now,
-        onOpenSheet: (sheet) => {
-          this.sheet = sheet;
-          this.render();
-        }
+        onFinishRecord: (type) => this.runAction(() => this.babyLogService.finishRecord(type)),
+        onPauseFeeding: () => this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING)),
+        onResumeFeeding: () => this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING)),
+        onSwitchFeedingSide: (side) => this.runAction(() => this.babyLogService.switchFeedingSide(side))
       }),
       this.renderCurrentRoute(),
       this.sheet ? this.renderSheet() : document.createDocumentFragment(),
@@ -103,7 +103,13 @@ export class App {
       renderQuickActions({
         activeRecords: this.state.activeRecords,
         onStartRecord: (type) => this.runAction(() => this.babyLogService.startRecord(type)),
+        onStartFeeding: (side) =>
+          this.runAction(() => this.babyLogService.startRecord(EVENT_TYPES.FEEDING, { details: { feedingSide: side } })),
         onSwitchFeedingSide: (side) => this.runAction(() => this.babyLogService.switchFeedingSide(side)),
+        onPauseFeeding: () => this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING)),
+        onResumeFeeding: () => this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING)),
+        onFinishFeeding: () => this.runAction(() => this.babyLogService.finishRecord(EVENT_TYPES.FEEDING)),
+        onFinishRecord: (type) => this.runAction(() => this.babyLogService.finishRecord(type)),
         onOpenSheet: (sheet) => {
           this.sheet = sheet;
           this.render();
@@ -227,7 +233,7 @@ export class App {
     this.state.now = now;
     const durationLabel = formatElapsedDuration(activeRecord.startedAt, now);
     const startLabel = formatTime(activeRecord.startedAt);
-    const footerAction = type === EVENT_TYPES.SLEEP ? "Finalizar sono" : "Finalizar mamada";
+    const footerAction = type === EVENT_TYPES.SLEEP ? "Acordou" : "Pausar, trocar lado ou finalizar";
 
     activeSession.setAttribute(
       "aria-label",
@@ -247,20 +253,29 @@ export class App {
     }
 
     if (type === EVENT_TYPES.FEEDING) {
+      const metrics = getFeedingSessionMetrics(activeRecord, now);
       const currentSide = getCurrentFeedingSide(activeRecord);
       const currentSideLabel = currentSide
         ? FEEDING_SIDES.find((option) => option.value === currentSide)?.label || "Seio não informado"
-        : "Sem seio selecionado";
-      const totals = getFeedingSideTotals(activeRecord, now);
+        : metrics.lastSide
+          ? FEEDING_SIDES.find((option) => option.value === metrics.lastSide)?.label || "Seio não informado"
+          : "Sem seio selecionado";
 
       const currentSideNode = this.root.querySelector("[data-active-session-current-side='true']");
       if (currentSideNode) {
-        currentSideNode.textContent = `Seio atual: ${currentSideLabel}`;
+        currentSideNode.textContent = metrics.isPaused
+          ? "Pausada · retome em um lado para continuar"
+          : `Seio atual: ${currentSideLabel}`;
       }
 
       const totalsNode = this.root.querySelector("[data-active-session-feeding-totals='true']");
       if (totalsNode) {
-        totalsNode.textContent = `Totais: Esquerdo ${formatSleepDuration(totals.left)} · Direito ${formatSleepDuration(totals.right)}`;
+        totalsNode.textContent = `Totais: Esquerdo ${formatSleepDuration(metrics.sideTotals.left)} · Direito ${formatSleepDuration(metrics.sideTotals.right)}`;
+      }
+
+      const effectiveNode = this.root.querySelector("[data-active-session-feed-effective='true']");
+      if (effectiveNode) {
+        effectiveNode.textContent = `Tempo efetivo: ${formatSleepDuration(metrics.effectiveMinutes)}`;
       }
       return;
     }

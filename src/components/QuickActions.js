@@ -1,15 +1,38 @@
-import { EVENT_TYPES, FEEDING_SIDES, getCurrentFeedingSide, getFeedingSideTotals } from "../domain/babyEvents.js";
+import {
+  EVENT_TYPES,
+  FEEDING_SIDES,
+  getCurrentFeedingSide,
+  getFeedingSessionMetrics,
+  isFeedingPaused
+} from "../domain/babyEvents.js";
 import { formatSleepDuration } from "../domain/stats.js";
 import { createElement, formatTime } from "../ui/dom.js";
 import { createIcon, iconText } from "../ui/icons.js";
 
-export function renderQuickActions({ activeRecords, onStartRecord, onSwitchFeedingSide, onOpenSheet }) {
+export function renderQuickActions({
+  activeRecords,
+  onStartRecord,
+  onStartFeeding,
+  onSwitchFeedingSide,
+  onPauseFeeding,
+  onResumeFeeding,
+  onFinishFeeding,
+  onFinishRecord,
+  onOpenSheet
+}) {
   const feedingRecord = activeRecords[EVENT_TYPES.FEEDING];
   const diaperRecord = activeRecords[EVENT_TYPES.DIAPER];
   const sleepRecord = activeRecords[EVENT_TYPES.SLEEP];
 
   return createElement("section", { className: "quick-actions", attributes: { "aria-label": "Ações rápidas" } }, [
-    renderPrimaryAction(feedingRecord, onStartRecord, onSwitchFeedingSide, onOpenSheet),
+    renderPrimaryAction({
+      feedingRecord,
+      onStartFeeding,
+      onSwitchFeedingSide,
+      onPauseFeeding,
+      onResumeFeeding,
+      onFinishFeeding
+    }),
     createElement("div", { className: "quick-actions__secondary-grid" }, [
       renderSecondaryAction({
         type: EVENT_TYPES.DIAPER,
@@ -18,6 +41,7 @@ export function renderQuickActions({ activeRecords, onStartRecord, onSwitchFeedi
         icon: "diaper",
         activeRecord: diaperRecord,
         onStartRecord,
+        onFinishRecord,
         onOpenSheet
       }),
       renderSecondaryAction({
@@ -27,6 +51,7 @@ export function renderQuickActions({ activeRecords, onStartRecord, onSwitchFeedi
         icon: "moon",
         activeRecord: sleepRecord,
         onStartRecord,
+        onFinishRecord,
         onOpenSheet
       })
     ]),
@@ -38,81 +63,92 @@ export function renderQuickActions({ activeRecords, onStartRecord, onSwitchFeedi
   ]);
 }
 
-function renderPrimaryAction(activeRecord, onStartRecord, onSwitchFeedingSide, onOpenSheet) {
-  if (activeRecord) {
-    const currentSide = getCurrentFeedingSide(activeRecord);
-    const totals = getFeedingSideTotals(activeRecord);
-    const segments = activeRecord.details?.feedingSegments || [];
-    const currentSegment = segments.findLast((segment) => !segment.endedAt) || segments.at(-1);
-
+function renderPrimaryAction({
+  feedingRecord,
+  onStartFeeding,
+  onSwitchFeedingSide,
+  onPauseFeeding,
+  onResumeFeeding,
+  onFinishFeeding
+}) {
+  if (!feedingRecord) {
     return createElement("article", { className: "quick-actions__card quick-actions__card--primary" }, [
       createElement("div", { className: "quick-actions__header" }, [
         createElement("span", { className: "quick-actions__title" }, [
           createIcon("bottle", "icon icon--badge"),
-          createElement("strong", { text: "Mamada em andamento" })
+          createElement("strong", { text: "Iniciar mamada" })
         ]),
-        createElement("span", { className: "quick-actions__description", text: `Iniciada às ${formatTime(activeRecord.startedAt)}` })
+        createElement("span", { className: "quick-actions__description", text: "Escolha o lado e comece em um toque." })
       ]),
-      renderFeedingStatus(activeRecord, currentSide, currentSegment, totals),
       createElement("div", { className: "quick-actions__button-row" }, [
         ...FEEDING_SIDES.map((option) =>
           createElement("button", {
-            className: currentSide === option.value ? "secondary-button secondary-button--selected" : "secondary-button",
-            attributes:
-              currentSide === option.value
-                ? { type: "button", disabled: "true" }
-                : { type: "button" },
-            events: currentSide === option.value ? {} : { click: () => onSwitchFeedingSide(option.value) }
-          }, [iconText(option.value === "left" ? "left" : "right", option.value === "left" ? "Esquerdo" : "Direito")])
-        ),
-        createElement("button", {
-          className: "action-button action-button--active",
-          attributes: { type: "button" },
-          events: { click: () => onOpenSheet({ type: EVENT_TYPES.FEEDING, mode: "finish" }) }
-        }, [iconText("stop", "Finalizar mamada")])
+            className: "secondary-button secondary-button--start",
+            attributes: { type: "button" },
+            events: { click: () => onStartFeeding(option.value) }
+          }, [iconText(option.value === "left" ? "left" : "right", option.label)])
+        )
       ])
     ]);
   }
+
+  const metrics = getFeedingSessionMetrics(feedingRecord);
+  const currentSide = getCurrentFeedingSide(feedingRecord);
+  const paused = isFeedingPaused(feedingRecord);
+  const currentSideLabel = currentSide
+    ? FEEDING_SIDES.find((option) => option.value === currentSide)?.label || "Seio não informado"
+    : metrics.lastSide
+      ? FEEDING_SIDES.find((option) => option.value === metrics.lastSide)?.label || "Seio não informado"
+      : "Sem seio selecionado";
+  const pauseLabel = paused ? "Retomar mamada" : "Pausar mamada";
+  const pauseIcon = paused ? "play" : "pause";
 
   return createElement("article", { className: "quick-actions__card quick-actions__card--primary" }, [
     createElement("div", { className: "quick-actions__header" }, [
       createElement("span", { className: "quick-actions__title" }, [
         createIcon("bottle", "icon icon--badge"),
-        createElement("strong", { text: "Iniciar mamada" })
+        createElement("strong", { text: paused ? "Mamada pausada" : "Mamada em andamento" })
       ]),
-      createElement("span", { className: "quick-actions__description", text: "Seio opcional e fluxo direto." })
+      createElement("span", { className: "quick-actions__description", text: `Iniciada às ${formatTime(feedingRecord.startedAt)}` })
     ]),
-    createElement("p", { className: "quick-actions__status", text: "A ação principal fica sempre pronta aqui." }),
-    createElement("button", {
-      className: "action-button action-button--primary",
-      attributes: { type: "button" },
-      events: { click: () => onOpenSheet({ type: EVENT_TYPES.FEEDING, mode: "start" }) }
-    }, [iconText("play", "Iniciar mamada")])
+    createElement("p", {
+      className: "quick-actions__status",
+      text: paused
+        ? `Pausa ativa · retome em um lado para continuar`
+        : `${currentSideLabel} · sessão ${formatSleepDuration(metrics.sessionMinutes)} · efetivo ${formatSleepDuration(metrics.effectiveMinutes)}`
+    }),
+    createElement("div", { className: "quick-actions__button-row" }, [
+      ...FEEDING_SIDES.map((option) =>
+        createElement("button", {
+          className: currentSide === option.value ? "secondary-button secondary-button--selected" : "secondary-button",
+          attributes:
+            currentSide === option.value && !paused
+              ? { type: "button", disabled: "true" }
+              : { type: "button" },
+          events: { click: () => onSwitchFeedingSide(option.value) }
+        }, [iconText(option.value === "left" ? "left" : "right", paused ? `Retomar ${option.label}` : option.label)])
+      ),
+      createElement("button", {
+        className: paused ? "secondary-button secondary-button--selected" : "action-button action-button--active",
+        attributes: { type: "button" },
+        events: { click: () => (paused ? onResumeFeeding() : onPauseFeeding()) }
+      }, [iconText(pauseIcon, pauseLabel)]),
+      createElement("button", {
+        className: "action-button action-button--active",
+        attributes: { type: "button" },
+        events: { click: () => onFinishFeeding() }
+      }, [iconText("stop", "Finalizar mamada")])
+    ])
   ]);
 }
 
-function renderFeedingStatus(activeRecord, currentSide, currentSegment, totals) {
-  if (!currentSide) {
-    return createElement("p", {
-      className: "quick-actions__status",
-      text: `Mamada iniciada às ${formatTime(activeRecord.startedAt)} · sem seio selecionado`
-    });
-  }
-
-  const currentLabel = FEEDING_SIDES.find((option) => option.value === currentSide)?.label || "Seio não informado";
-
-  return createElement("p", {
-    className: "quick-actions__status",
-    text: `${currentLabel} desde ${formatTime(currentSegment?.startedAt || activeRecord.startedAt)} · E ${formatSleepDuration(
-      totals.left
-    )} · D ${formatSleepDuration(totals.right)}`
-  });
-}
-
-function renderSecondaryAction({ type, title, description, icon, activeRecord, onStartRecord, onOpenSheet }) {
-  const displayTitle = activeRecord && type === EVENT_TYPES.SLEEP ? "Sono em andamento" : title;
-  const label = activeRecord && type === EVENT_TYPES.SLEEP ? "Finalizar sono" : title;
-  const iconName = activeRecord && type === EVENT_TYPES.SLEEP ? "stop" : type === EVENT_TYPES.DIAPER ? "plus" : "play";
+function renderSecondaryAction({ type, title, description, icon, activeRecord, onStartRecord, onFinishRecord, onOpenSheet }) {
+  const isSleep = type === EVENT_TYPES.SLEEP;
+  const isDiaper = type === EVENT_TYPES.DIAPER;
+  const active = Boolean(activeRecord);
+  const displayTitle = isSleep && active ? "Sono em andamento" : title;
+  const label = active && isSleep ? "Acordar agora" : isDiaper ? "Registrar fralda" : title;
+  const iconName = active && isSleep ? "stop" : isDiaper ? "plus" : "play";
 
   return createElement("article", { className: "quick-actions__card quick-actions__card--secondary" }, [
     createElement("div", { className: "quick-actions__header" }, [
@@ -123,22 +159,17 @@ function renderSecondaryAction({ type, title, description, icon, activeRecord, o
       createElement("span", { className: "quick-actions__description", text: description })
     ]),
     createElement("button", {
-      className: activeRecord ? "action-button action-button--active" : "action-button action-button--secondary",
+      className: active ? "action-button action-button--active" : "action-button action-button--secondary",
       attributes: { type: "button" },
       events: {
         click: () => {
-          if (activeRecord && type === EVENT_TYPES.SLEEP) {
-            onOpenSheet({ type, mode: "finish" });
+          if (isSleep && active) {
+            onFinishRecord(type);
             return;
           }
 
-          if (type === EVENT_TYPES.DIAPER) {
+          if (isDiaper) {
             onOpenSheet({ type, mode: "instant" });
-            return;
-          }
-
-          if (type === EVENT_TYPES.SLEEP) {
-            onStartRecord(type);
             return;
           }
 

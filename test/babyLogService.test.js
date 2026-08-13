@@ -206,6 +206,7 @@ test("BabyLogService registra fralda instantanea com notas e opcoes", async () =
   assert.equal(dashboard.entries[0].durationMinutes, null);
   assert.equal(dashboard.entries[0].notes, "Troca antes do banho");
   assert.deepEqual(dashboard.entries[0].details, {
+    diaperContent: "both",
     diaperWeightGrams: 42,
     peeAmount: "high",
     poopAmount: "low",
@@ -223,10 +224,58 @@ test("BabyLogService rejeita peso de fralda invalido", async () => {
     () =>
       service.addInstantRecord(
         EVENT_TYPES.DIAPER,
-        { details: { diaperWeightGrams: -1 } },
+        { details: { diaperContent: "pee", diaperWeightGrams: -1 } },
         new Date("2026-08-11T12:00:00.000Z")
       ),
     /peso da fralda/
+  );
+});
+
+test("BabyLogService pausa e retoma mamada preservando segmentos", async () => {
+  const repository = new MemoryBabyLogRepository();
+  const service = new BabyLogService(repository);
+
+  await service.startRecord(
+    EVENT_TYPES.FEEDING,
+    { details: { feedingSide: "left" } },
+    new Date("2026-08-11T10:00:00.000Z")
+  );
+
+  await service.pauseRecord(EVENT_TYPES.FEEDING, new Date("2026-08-11T10:12:00.000Z"));
+  await service.resumeRecord(EVENT_TYPES.FEEDING, {}, new Date("2026-08-11T10:20:00.000Z"));
+  await service.finishRecord(EVENT_TYPES.FEEDING, {}, new Date("2026-08-11T10:35:00.000Z"));
+
+  const dashboard = await service.getDashboard();
+
+  assert.equal(dashboard.entries[0].durationMinutes, 35);
+  assert.deepEqual(dashboard.entries[0].details.feedingSegments, [
+    {
+      side: "left",
+      startedAt: "2026-08-11T10:00:00.000Z",
+      endedAt: "2026-08-11T10:12:00.000Z",
+      durationMinutes: 12
+    },
+    {
+      side: "left",
+      startedAt: "2026-08-11T10:20:00.000Z",
+      endedAt: "2026-08-11T10:35:00.000Z",
+      durationMinutes: 15
+    }
+  ]);
+});
+
+test("BabyLogService rejeita fralda sem escolha de conteudo", async () => {
+  const repository = new MemoryBabyLogRepository();
+  const service = new BabyLogService(repository);
+
+  await assert.rejects(
+    () =>
+      service.addInstantRecord(
+        EVENT_TYPES.DIAPER,
+        { details: { diaperWeightGrams: 42 } },
+        new Date("2026-08-11T12:00:00.000Z")
+      ),
+    /conteúdo da fralda/
   );
 });
 

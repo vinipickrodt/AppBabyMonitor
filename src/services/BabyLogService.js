@@ -5,7 +5,10 @@ import {
   EVENT_TYPES,
   createBabyEvent,
   getCurrentFeedingSide,
+  getLastFeedingSide,
+  getFeedingSessionMetrics,
   isValidFeedingSide,
+  isValidDiaperContent,
   sortNewestFirst
 } from "../domain/babyEvents.js";
 
@@ -43,6 +46,44 @@ export class BabyLogService {
     return { ...activeRecords, [type]: activeRecord };
   }
 
+  async pauseRecord(type, now = new Date()) {
+    this.ensureFeedingType(type);
+    const activeRecords = await this.repository.getActiveRecords();
+    const activeRecord = activeRecords[type];
+
+    if (!activeRecord) {
+      return null;
+    }
+
+    const nextRecord = this.closeOpenFeedingSegment(activeRecord, now);
+
+    if (nextRecord === activeRecord) {
+      return activeRecord;
+    }
+
+    await this.repository.setActiveRecord(type, nextRecord);
+    return nextRecord;
+  }
+
+  async resumeRecord(type, { details = {} } = {}, now = new Date()) {
+    this.ensureFeedingType(type);
+    const activeRecords = await this.repository.getActiveRecords();
+    const activeRecord = activeRecords[type];
+
+    if (!activeRecord) {
+      return null;
+    }
+
+    const nextRecord = this.openFeedingSegment(activeRecord, details.feedingSide, now);
+
+    if (nextRecord === activeRecord) {
+      return activeRecord;
+    }
+
+    await this.repository.setActiveRecord(type, nextRecord);
+    return nextRecord;
+  }
+
   async switchFeedingSide(side, now = new Date()) {
     this.ensureFeedingSide(side);
     const activeRecords = await this.repository.getActiveRecords();
@@ -53,42 +94,18 @@ export class BabyLogService {
     }
 
     const currentSide = getCurrentFeedingSide(activeRecord);
+    const openSegment = activeRecord.details?.feedingSegments?.findLast((segment) => !segment.endedAt);
+    const switchedAt = now.toISOString();
 
-    if (currentSide === side) {
+    if (currentSide === side && openSegment) {
       return activeRecord;
     }
 
-    const switchedAt = now.toISOString();
-    const existingSegments = activeRecord.details?.feedingSegments || [];
-    const nextSegments = existingSegments.map((segment, index) => {
-      const isLastOpenSegment = index === existingSegments.length - 1 && !segment.endedAt;
-
-      if (!isLastOpenSegment) {
-        return segment;
-      }
-
-      return {
-        ...segment,
-        endedAt: switchedAt,
-        durationMinutes: Math.max(1, Math.round((now - new Date(segment.startedAt)) / 60000))
-      };
-    });
-
-    nextSegments.push({
+    const nextActiveRecord = this.openFeedingSegment(
+      this.closeOpenFeedingSegment(activeRecord, now),
       side,
-      startedAt: switchedAt
-    });
-
-    const nextActiveRecord = {
-      ...activeRecord,
-      status: activeRecord.status || EVENT_STATUS.ACTIVE,
-      updatedAt: switchedAt,
-      version: activeRecord.version || BABY_EVENT_VERSION,
-      details: {
-        ...activeRecord.details,
-        feedingSegments: nextSegments
-      }
-    };
+      now
+    );
 
     await this.repository.setActiveRecord(EVENT_TYPES.FEEDING, nextActiveRecord);
     return nextActiveRecord;
@@ -142,6 +159,10 @@ export class BabyLogService {
       throw new Error("Esse tipo de registro precisa de duracao.");
     }
 
+    if (!this.hasValidDiaperSelection(details)) {
+      throw new Error("Selecione o conteúdo da fralda.");
+    }
+
     return this.repository.saveEntry(
       createBabyEvent({
         type,
@@ -167,6 +188,24 @@ export class BabyLogService {
     if (!isValidFeedingSide(side)) {
       throw new Error("Selecione um seio valido.");
     }
+  }
+
+  ensureFeedingType(type) {
+    if (type !== EVENT_TYPES.FEEDING) {
+      throw new Error("Esse fluxo é exclusivo para mamada.");
+    }
+  }
+
+  hasValidDiaperSelection(details) {
+    if (isValidDiaperContent(details.diaperContent)) {
+      return true;
+    }
+
+    const legacyDiaperTypes = Array.isArray(details.diaperTypes) ? details.diaperTypes : [];
+    const peeSelected = details.peeAmount && details.peeAmount !== "none" || legacyDiaperTypes.includes("pee");
+    const poopSelected = details.poopAmount && details.poopAmount !== "none" || legacyDiaperTypes.includes("poop");
+
+    return Boolean(peeSelected || poopSelected);
   }
 
   createActiveDetails(type, details, startedAt) {
@@ -220,24 +259,84 @@ export class BabyLogService {
       return details;
     }
 
+    return this.closeOpenFeedingSegment({ details }, now).details;
+  }
+
+  closeOpenFeedingSegment(activeRecord, now) {
+    if (!activeRecord) {
+      return activeRecord;
+    }
+
+    const segments = activeRecord.details?.feedingSegments || [];
+    const openIndex = segments.findLastIndex((segment) => !segment.endedAt);
+
+    if (openIndex < 0) {
+      return activeRecord;
+    }
+
     const endedAt = now.toISOString();
-    const segments = details.feedingSegments || [];
+    const nextSegments = segments.map((segment, index) => {
+      if (index !== openIndex) {
+        return segment;
+      }
+
+      return {
+        ...segment,
+        endedAt,
+        durationMinutes: Math.max(1, Math.round((now - new Date(segment.startedAt)) / 60000))
+      };
+    });
 
     return {
-      ...details,
-      feedingSegments: segments.map((segment, index) => {
-        const isLastOpenSegment = index === segments.length - 1 && !segment.endedAt;
+      ...activeRecord,
+      status: activeRecord.status || EVENT_STATUS.ACTIVE,
+      updatedAt: endedAt,
+      version: activeRecord.version || BABY_EVENT_VERSION,
+      details: {
+        ...activeRecord.details,
+        feedingSegments: nextSegments
+      }
+    };
+  }
 
-        if (!isLastOpenSegment) {
-          return segment;
-        }
+  openFeedingSegment(activeRecord, feedingSide, now) {
+    if (!activeRecord) {
+      return activeRecord;
+    }
 
-        return {
-          ...segment,
-          endedAt,
-          durationMinutes: Math.max(1, Math.round((now - new Date(segment.startedAt)) / 60000))
-        };
-      })
+    const startedAt = now.toISOString();
+    const segments = activeRecord.details?.feedingSegments || [];
+    const currentSide = getCurrentFeedingSide(activeRecord);
+    const fallbackSide = getLastFeedingSide(activeRecord);
+    const nextSide = feedingSide || fallbackSide;
+
+    if (!nextSide) {
+      return activeRecord;
+    }
+
+    if (segments.findLast((segment) => !segment.endedAt) && currentSide === nextSide) {
+      return activeRecord;
+    }
+
+    if (!isValidFeedingSide(nextSide)) {
+      throw new Error("Selecione um seio valido.");
+    }
+
+    return {
+      ...activeRecord,
+      status: activeRecord.status || EVENT_STATUS.ACTIVE,
+      updatedAt: startedAt,
+      version: activeRecord.version || BABY_EVENT_VERSION,
+      details: {
+        ...activeRecord.details,
+        feedingSegments: [
+          ...segments,
+          {
+            side: nextSide,
+            startedAt
+          }
+        ]
+      }
     };
   }
 }

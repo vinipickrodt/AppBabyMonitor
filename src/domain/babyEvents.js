@@ -18,6 +18,12 @@ export const FEEDING_SIDES = [
   { value: "right", label: "Seio direito" }
 ];
 
+export const DIAPER_CONTENT_OPTIONS = [
+  { value: "pee", label: "Xixi" },
+  { value: "poop", label: "Cocô" },
+  { value: "both", label: "Xixi + cocô" }
+];
+
 export const DIAPER_OPTIONS = [
   { value: "leak", label: "Vazou" },
   { value: "cream", label: "Pomada aplicada" },
@@ -182,6 +188,7 @@ function normalizeDetails(type, details) {
 
 function normalizeDiaperDetails(details) {
   const legacyDiaperTypes = Array.isArray(details.diaperTypes) ? details.diaperTypes : [];
+  const diaperContent = normalizeDiaperContent(details.diaperContent, details.peeAmount, details.poopAmount, legacyDiaperTypes);
   const diaperWeightGrams = details.diaperWeightGrams === "" || details.diaperWeightGrams == null
     ? null
     : Math.round(Number(details.diaperWeightGrams));
@@ -191,13 +198,41 @@ function normalizeDiaperDetails(details) {
   }
 
   return {
+    ...(diaperContent ? { diaperContent } : {}),
     diaperWeightGrams,
-    peeAmount: normalizeOption(details.peeAmount || (legacyDiaperTypes.includes("pee") ? "normal" : "none"), DIAPER_AMOUNT_OPTIONS, "none"),
-    poopAmount: normalizeOption(details.poopAmount || (legacyDiaperTypes.includes("poop") ? "normal" : "none"), DIAPER_AMOUNT_OPTIONS, "none"),
+    peeAmount: normalizeOption(details.peeAmount || inferAmount(legacyDiaperTypes, "pee"), DIAPER_AMOUNT_OPTIONS, "none"),
+    poopAmount: normalizeOption(details.poopAmount || inferAmount(legacyDiaperTypes, "poop"), DIAPER_AMOUNT_OPTIONS, "none"),
     diaperOptions: normalizeMultiOption(details.diaperOptions || legacyDiaperTypes, DIAPER_OPTIONS),
     stoolAppearances: normalizeMultiOption(details.stoolAppearances, STOOL_APPEARANCE_OPTIONS),
     attentionFlags: normalizeMultiOption(details.attentionFlags, DIAPER_ATTENTION_FLAGS)
   };
+}
+
+function inferAmount(legacyDiaperTypes, type) {
+  return legacyDiaperTypes.includes(type) ? "normal" : "none";
+}
+
+function normalizeDiaperContent(diaperContent, peeAmount, poopAmount, legacyDiaperTypes) {
+  if (isValidDiaperContent(diaperContent)) {
+    return diaperContent;
+  }
+
+  const peeSelected = legacyDiaperTypes.includes("pee") || (peeAmount && peeAmount !== "none");
+  const poopSelected = legacyDiaperTypes.includes("poop") || (poopAmount && poopAmount !== "none");
+
+  if (peeSelected && poopSelected) {
+    return "both";
+  }
+
+  if (peeSelected) {
+    return "pee";
+  }
+
+  if (poopSelected) {
+    return "poop";
+  }
+
+  return null;
 }
 
 function normalizeOption(value, options, fallback) {
@@ -214,11 +249,26 @@ export function isValidFeedingSide(side) {
   return FEEDING_SIDES.some((option) => option.value === side);
 }
 
+export function isValidDiaperContent(content) {
+  return DIAPER_CONTENT_OPTIONS.some((option) => option.value === content);
+}
+
 export function getCurrentFeedingSide(activeRecord) {
   const segments = activeRecord?.details?.feedingSegments || [];
   const currentSegment = segments.findLast((segment) => !segment.endedAt);
 
   return currentSegment?.side || null;
+}
+
+export function getLastFeedingSide(activeRecord) {
+  const segments = activeRecord?.details?.feedingSegments || [];
+  const lastSegment = segments.at(-1);
+
+  return isValidFeedingSide(lastSegment?.side) ? lastSegment.side : null;
+}
+
+export function isFeedingPaused(activeRecord) {
+  return Boolean(activeRecord?.status === EVENT_STATUS.ACTIVE && (activeRecord?.details?.feedingSegments || []).length && !getCurrentFeedingSide(activeRecord));
 }
 
 export function getFeedingSideTotals(record, now = new Date()) {
@@ -241,6 +291,36 @@ export function getFeedingSideTotals(record, now = new Date()) {
   });
 
   return totals;
+}
+
+export function getFeedingSessionMetrics(record, now = new Date()) {
+  const segments = record?.details?.feedingSegments || [];
+  const currentSegment = segments.findLast((segment) => !segment.endedAt);
+  const lastSegment = segments.at(-1) || null;
+  const referenceDate = new Date(record?.endedAt || now);
+  const sessionStart = new Date(record?.startedAt || referenceDate);
+  const sessionMinutes = Math.max(1, Math.round((referenceDate - sessionStart) / 60000));
+  const effectiveMinutes = segments.reduce((total, segment) => {
+    if (!isValidFeedingSide(segment.side) || !segment.startedAt) {
+      return total;
+    }
+
+    const minutes = Number(
+      segment.durationMinutes ??
+        Math.max(0, Math.round((new Date(segment.endedAt || now) - new Date(segment.startedAt)) / 60000))
+    );
+
+    return total + (Number.isFinite(minutes) ? minutes : 0);
+  }, 0);
+
+  return {
+    currentSide: currentSegment?.side || null,
+    lastSide: isValidFeedingSide(lastSegment?.side) ? lastSegment.side : null,
+    isPaused: Boolean(record?.status === EVENT_STATUS.ACTIVE && segments.length && !currentSegment),
+    sessionMinutes,
+    effectiveMinutes,
+    sideTotals: getFeedingSideTotals(record, now)
+  };
 }
 
 function normalizeFeedingSegments(segments) {

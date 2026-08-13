@@ -163,6 +163,12 @@
   margin: 0;
 }
 
+.active-session-card__controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .active-session-card__footer-action {
   font-weight: 750;
   color: var(--accent-strong);
@@ -420,6 +426,20 @@
   font-size: 0.88rem;
 }
 
+.medical-note--stacked {
+  grid-template-columns: 1fr;
+}
+
+.medical-note--stacked .medical-note__body {
+  display: grid;
+  gap: 8px;
+}
+
+.sheet-dynamic-section {
+  display: grid;
+  gap: 10px;
+}
+
 .inline-link-button {
   width: fit-content;
   min-height: 36px;
@@ -530,6 +550,10 @@
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-weight: 750;
+}
+
+.secondary-button--start {
+  min-height: 56px;
 }
 
 .secondary-button--selected,

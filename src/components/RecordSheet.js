@@ -1,6 +1,7 @@
 import {
   DIAPER_AMOUNT_OPTIONS,
   DIAPER_ATTENTION_FLAGS,
+  DIAPER_CONTENT_OPTIONS,
   DIAPER_OPTIONS,
   EVENT_TYPES,
   FEEDING_SIDES,
@@ -26,19 +27,52 @@ export function renderRecordSheet(sheet, { activeRecord, onCancel, onSubmit }) {
       placeholder: "Notas opcionais"
     }
   });
+  const saveButton = createElement(
+    "button",
+    {
+      className: "action-button",
+      attributes: { type: "submit", disabled: "true" }
+    },
+    [iconText("save", "Salvar")]
+  );
   const fields = [
     createElement("h2", { className: "record-sheet__title" }, [
       createIcon(getSheetIcon(sheet), "icon icon--badge"),
-      document.createTextNode(getTitle(sheet))
+      createElement("span", { text: getTitle(sheet) })
     ]),
     activeRecord
-      ? createElement("p", { className: "sheet-caption", text: `Inicio: ${formatTime(activeRecord.startedAt)}` })
-      : createElement("p", { className: "sheet-caption", text: "Adicione detalhes antes de salvar." })
+      ? createElement("p", { className: "sheet-caption", text: `Início: ${formatTime(activeRecord.startedAt)}` })
+      : createElement("p", { className: "sheet-caption", text: "Adicione os detalhes essenciais antes de salvar." })
   ];
-  const durationFields = sheet.mode === "duration" ? addDurationInput(fields) : null;
-  const feedingSideInputs =
-    sheet.type === EVENT_TYPES.FEEDING && ["start", "duration"].includes(sheet.mode) ? addFeedingSideOptions(fields) : [];
-  const diaperFields = sheet.type === EVENT_TYPES.DIAPER ? addDiaperFields(fields) : createEmptyDiaperFields();
+
+  const state = {
+    durationFields: null,
+    selectedFeedingSide: null,
+    selectedDiaperContent: null,
+    feedingSideInputs: [],
+    diaperContentInputs: [],
+    diaperWeightInput: null,
+    peeInputs: [],
+    poopInputs: [],
+    optionInputs: [],
+    stoolInputs: [],
+    attentionInputs: []
+  };
+
+  if (sheet.type === EVENT_TYPES.FEEDING && sheet.mode === "start") {
+    state.feedingSideInputs = addFeedingStartFields(fields, () => {
+      state.selectedFeedingSide = getSelectedValue(state.feedingSideInputs);
+      saveButton.disabled = !state.selectedFeedingSide;
+    });
+  } else if (sheet.type === EVENT_TYPES.FEEDING && sheet.mode === "duration") {
+    state.durationFields = addDurationInput(fields);
+    state.feedingSideInputs = addFeedingOptionalSideFields(fields);
+    saveButton.disabled = false;
+  } else if (sheet.type === EVENT_TYPES.DIAPER) {
+    state.diaperContentInputs = addDiaperFields(fields, saveButton, state);
+  } else {
+    saveButton.disabled = false;
+  }
 
   if (includeNotes) {
     fields.push(createElement("label", { text: "Notas", attributes: { for: "record-notes" } }), notes);
@@ -51,34 +85,41 @@ export function renderRecordSheet(sheet, { activeRecord, onCancel, onSubmit }) {
         attributes: { type: "button" },
         events: { click: onCancel }
       }, [iconText("close", "Cancelar")]),
-      createElement("button", {
-        className: "action-button",
-        attributes: { type: "submit" }
-      }, [iconText("save", "Salvar")])
+      saveButton
     ])
   );
 
   const form = createElement("form", { className: "record-sheet" }, fields);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const durationMinutes = durationFields
-      ? parseDurationPartsToMinutes(durationFields.hoursInput.value, durationFields.minutesInput.value)
-      : null;
-    const diaperWeightGrams = diaperFields.weightInput?.value ? Number(diaperFields.weightInput.value) : null;
 
-    if (durationFields && !durationMinutes) {
-      durationFields.minutesInput.setCustomValidity("Informe horas e minutos. A duracao precisa ser maior que zero.");
-      durationFields.minutesInput.reportValidity();
-      durationFields.hoursInput.focus();
+    const durationMinutes = state.durationFields
+      ? parseDurationPartsToMinutes(state.durationFields.hoursInput.value, state.durationFields.minutesInput.value)
+      : null;
+
+    if (state.durationFields && !durationMinutes) {
+      state.durationFields.minutesInput.setCustomValidity("Informe horas e minutos. A duração precisa ser maior que zero.");
+      state.durationFields.minutesInput.reportValidity();
+      state.durationFields.hoursInput.focus();
       return;
     }
 
-    if (durationFields) {
-      durationFields.minutesInput.setCustomValidity("");
+    if (state.durationFields) {
+      state.durationFields.minutesInput.setCustomValidity("");
     }
 
-    if (diaperFields.weightInput && diaperWeightGrams !== null && (!Number.isFinite(diaperWeightGrams) || diaperWeightGrams < 0)) {
-      diaperFields.weightInput.focus();
+    if (sheet.type === EVENT_TYPES.FEEDING && sheet.mode === "start" && !state.selectedFeedingSide) {
+      return;
+    }
+
+    if (sheet.type === EVENT_TYPES.DIAPER && !state.selectedDiaperContent) {
+      return;
+    }
+
+    const diaperWeightGrams = state.diaperWeightInput?.value ? Number(state.diaperWeightInput.value) : null;
+
+    if (state.diaperWeightInput && diaperWeightGrams !== null && (!Number.isFinite(diaperWeightGrams) || diaperWeightGrams < 0)) {
+      state.diaperWeightInput.focus();
       return;
     }
 
@@ -86,23 +127,54 @@ export function renderRecordSheet(sheet, { activeRecord, onCancel, onSubmit }) {
       notes: includeNotes ? notes.value : "",
       durationMinutes,
       details: {
-        feedingSide: feedingSideInputs.find((input) => input.checked)?.value || null,
+        feedingSide: getSelectedValue(state.feedingSideInputs),
+        diaperContent: state.selectedDiaperContent,
         diaperWeightGrams,
-        peeAmount: getCheckedValue(diaperFields.peeInputs) || "none",
-        poopAmount: getCheckedValue(diaperFields.poopInputs) || "none",
-        diaperOptions: getCheckedValues(diaperFields.optionInputs),
-        stoolAppearances: getCheckedValues(diaperFields.stoolInputs),
-        attentionFlags: getCheckedValues(diaperFields.attentionInputs)
+        peeAmount: getSelectedValue(state.peeInputs),
+        poopAmount: getSelectedValue(state.poopInputs),
+        diaperOptions: getCheckedValues(state.optionInputs),
+        stoolAppearances: getCheckedValues(state.stoolInputs),
+        attentionFlags: getCheckedValues(state.attentionInputs)
       }
     });
   });
 
-  return createElement("div", { className: "sheet-backdrop", attributes: { role: "dialog", "aria-modal": "true" } }, [
-    form
-  ]);
+  return createElement("div", { className: "sheet-backdrop", attributes: { role: "dialog", "aria-modal": "true" } }, [form]);
 }
 
-function addDiaperFields(fields) {
+function addFeedingStartFields(fields, onSelectionChange) {
+  const inputs = FEEDING_SIDES.map((option) => createChoiceInput("radio", "feedingSide", option));
+
+  inputs.forEach(({ input }) => {
+    input.addEventListener("change", onSelectionChange);
+  });
+
+  fields.push(
+    renderOptionGroup("Escolha o seio", inputs),
+    createElement("span", { className: "field-hint", text: "Escolha um lado para começar a mamada." })
+  );
+
+  return inputs.map(({ input }) => input);
+}
+
+function addFeedingOptionalSideFields(fields) {
+  const inputs = FEEDING_SIDES.map((option) => createChoiceInput("radio", "feedingSide", option));
+
+  fields.push(
+    renderOptionGroup("Seio", inputs),
+    createElement("span", { className: "field-hint", text: "Opcional para registrar o lado na mamada por duração." })
+  );
+
+  return inputs.map(({ input }) => input);
+}
+
+function addDiaperFields(fields, saveButton, state) {
+  const contentInputs = DIAPER_CONTENT_OPTIONS.map((option) => createChoiceInput("radio", "diaperContent", option));
+  const peeInputs = createChoiceGroup(DIAPER_AMOUNT_OPTIONS, "peeAmount");
+  const poopInputs = createChoiceGroup(DIAPER_AMOUNT_OPTIONS, "poopAmount");
+  const optionInputs = createCheckboxChoices(DIAPER_OPTIONS, "diaperOptions");
+  const stoolInputs = createCheckboxChoices(STOOL_APPEARANCE_OPTIONS, "stoolAppearances");
+  const attentionInputs = createAttentionChoices();
   const weightInput = createElement("input", {
     attributes: {
       id: "diaper-weight",
@@ -114,80 +186,66 @@ function addDiaperFields(fields) {
       type: "number"
     }
   });
-  const peeInputs = addAmountOptions(fields, "Xixi", "peeAmount", "normal");
-  const poopInputs = addAmountOptions(fields, "Coco", "poopAmount", "none");
-  const optionInputs = addCheckboxGroup(fields, "Outras observacoes", DIAPER_OPTIONS, "diaperOptions");
-  const stoolInputs = addCheckboxGroup(fields, "Aspecto do coco", STOOL_APPEARANCE_OPTIONS, "stoolAppearances");
-  const attentionInputs = addAttentionOptions(fields);
 
-  fields.splice(
-    2,
-    0,
+  const generalSection = createElement("div", { className: "sheet-dynamic-section", attributes: { hidden: "true" } }, [
     createElement("div", { className: "medical-note" }, [
       createIcon("alert", "icon icon--attention"),
-      createElement("span", { text: "Use estes campos para acompanhar hidratacao e sinais para conversar com o pediatra." }),
-      createMedicalInfoDialog()
+      createElement("span", { text: "Os campos abaixo aparecem depois da escolha básica do conteúdo da fralda." })
     ]),
     createElement("label", { text: "Peso da fralda em gramas", attributes: { for: "diaper-weight" } }),
-    weightInput
-  );
-
-  return {
     weightInput,
-    peeInputs,
-    poopInputs,
-    optionInputs,
-    stoolInputs,
-    attentionInputs
-  };
-}
+    renderOptionGroup("Outras observações", optionInputs),
+    createHelpBlock()
+  ]);
+  const peeSection = createElement("div", { className: "sheet-dynamic-section", attributes: { hidden: "true" } }, [
+    renderOptionGroup("Quantidade de xixi", peeInputs)
+  ]);
+  const poopSection = createElement("div", { className: "sheet-dynamic-section", attributes: { hidden: "true" } }, [
+    renderOptionGroup("Quantidade de cocô", poopInputs),
+    renderOptionGroup("Aspecto do cocô", stoolInputs),
+    renderOptionGroup("Pontos de atenção", attentionInputs)
+  ]);
 
-function addAmountOptions(fields, legend, name, checkedValue) {
-  const inputs = DIAPER_AMOUNT_OPTIONS.map((option) => createChoiceInput("radio", name, option, option.value === checkedValue));
-  fields.push(renderOptionGroup(legend, inputs));
-  return inputs.map(({ input }) => input);
-}
-
-function addCheckboxGroup(fields, legend, options, name) {
-  const inputs = options.map((option) => createChoiceInput("checkbox", name, option));
-  fields.push(renderOptionGroup(legend, inputs));
-  return inputs.map(({ input }) => input);
-}
-
-function addAttentionOptions(fields) {
-  const inputs = DIAPER_ATTENTION_FLAGS.map((option) =>
-    createChoiceInput("checkbox", "attentionFlags", {
-      ...option,
-      label: `${option.label} (${getLevelLabel(option.level)})`
-    })
+  fields.push(
+    renderOptionGroup("Conteúdo", contentInputs),
+    createElement("span", { className: "field-hint", text: "Selecione primeiro o conteúdo dominante." }),
+    generalSection,
+    peeSection,
+    poopSection
   );
-  fields.push(renderOptionGroup("Pontos de atencao", inputs));
-  return inputs.map(({ input }) => input);
+
+  state.diaperWeightInput = weightInput;
+  state.diaperContentInputs = contentInputs.map(({ input }) => input);
+  state.peeInputs = peeInputs.map(({ input }) => input);
+  state.poopInputs = poopInputs.map(({ input }) => input);
+  state.optionInputs = optionInputs.map(({ input }) => input);
+  state.stoolInputs = stoolInputs.map(({ input }) => input);
+  state.attentionInputs = attentionInputs.map(({ input }) => input);
+
+  const syncVisibility = () => {
+    const selectedContent = getSelectedValue(state.diaperContentInputs);
+    state.selectedDiaperContent = selectedContent;
+
+    const hasSelection = Boolean(selectedContent);
+    saveButton.disabled = !hasSelection;
+    generalSection.hidden = !hasSelection;
+    peeSection.hidden = !hasSelection || selectedContent === "poop";
+    poopSection.hidden = !hasSelection || selectedContent === "pee";
+  };
+
+  contentInputs.forEach(({ input }) => {
+    input.addEventListener("change", syncVisibility);
+  });
+
+  syncVisibility();
+  return state.diaperContentInputs;
 }
 
-function createMedicalInfoDialog() {
-  let dialog;
-  const closeDialog = () => {
-    if (dialog.close) {
-      dialog.close();
-      return;
-    }
-
-    dialog.removeAttribute("open");
-  };
-  const openDialog = () => {
-    if (dialog.showModal) {
-      dialog.showModal();
-      return;
-    }
-
-    dialog.setAttribute("open", "true");
-  };
-
-  dialog = createElement("dialog", { className: "info-dialog" }, [
-    createElement("h3", { text: "Pontos de atencao" }),
+function createHelpBlock() {
+  return createElement("details", { className: "medical-note medical-note--stacked" }, [
+    createElement("summary", { text: "Pontos de atenção" }),
     createElement("p", {
-      text: "Estas informacoes ajudam a organizar observacoes para o pediatra. O app nao substitui avaliacao medica."
+      text: "Estas informações ajudam a organizar observações para o pediatra. O app não substitui avaliação médica."
     }),
     createElement(
       "ul",
@@ -198,54 +256,25 @@ function createMedicalInfoDialog() {
           createElement("span", { text: ` - ${flag.summary} ${flag.action}` })
         ])
       )
-    ),
-    createElement("h3", { text: "Referencias" }),
-    createElement("ul", {}, [
-      referenceLink("AAP - primeira visita do recem-nascido", "https://www.aap.org/en/patient-care/newborn-infant-and-early-childhood-nutrition/newborn-and-infant-health-assessment-and-promotion/first-office-visit-3-5-days/"),
-      referenceLink("HealthyChildren - urina e evacuacoes nos primeiros dias", "https://www.healthychildren.org/English/ages-stages/baby/Pages/babys-first-days-bowel-movements-and-urination.aspx"),
-      referenceLink("HealthyChildren - diarreia em bebes", "https://www.healthychildren.org/english/ages-stages/baby/diapers-clothing/pages/diarrhea-in-babies.aspx"),
-      referenceLink("NICHD - fundamentos de saude infantil", "https://www.nichd.nih.gov/health/topics/infantcare/conditioninfo/basics")
-    ]),
-    createElement("button", {
-      className: "secondary-button",
-      text: "Fechar",
-      attributes: { type: "button" },
-      events: { click: closeDialog }
-    })
+    )
   ]);
-  const button = createElement("button", {
-    className: "inline-link-button",
-    attributes: { type: "button" },
-    events: { click: openDialog }
-  }, [iconText("info", "Ler mais")]);
-
-  return createElement("span", { className: "medical-note__actions" }, [button, dialog]);
 }
 
-function referenceLink(label, href) {
-  const link = createElement("a", {
-    text: label,
-    attributes: {
-      href,
-      rel: "noreferrer",
-      target: "_blank"
-    }
-  });
-
-  return createElement("li", {}, [link]);
+function createChoiceGroup(options, name) {
+  return options.map((option) => createChoiceInput("radio", name, option));
 }
 
-function addFeedingSideOptions(fields) {
-  const inputs = FEEDING_SIDES.map((option) => {
-    const choice = createChoiceInput("radio", "feedingSide", option);
-    return choice;
-  });
+function createCheckboxChoices(options, name) {
+  return options.map((option) => createChoiceInput("checkbox", name, option));
+}
 
-  fields.push(
-    renderOptionGroup("Seio opcional", inputs),
-    createElement("span", { className: "field-hint", text: "Deixe em branco para registrar a mamada sem separar por lado." })
+function createAttentionChoices() {
+  return DIAPER_ATTENTION_FLAGS.map((option) =>
+    createChoiceInput("checkbox", "attentionFlags", {
+      ...option,
+      label: `${option.label} (${getLevelLabel(option.level)})`
+    })
   );
-  return inputs.map(({ input }) => input);
 }
 
 function addDurationInput(fields) {
@@ -283,7 +312,7 @@ function addDurationInput(fields) {
 
   fields.push(
     createElement("fieldset", { className: "duration-control" }, [
-      createElement("legend", { text: "Duracao aproximada" }),
+      createElement("legend", { text: "Duração aproximada" }),
       createElement("div", { className: "duration-control__grid" }, [
         createElement("label", { className: "duration-field", attributes: { for: "record-duration-hours" } }, [
           createElement("span", { text: "Horas" }),
@@ -336,18 +365,7 @@ function renderOptionGroup(legend, choices) {
   ]);
 }
 
-function createEmptyDiaperFields() {
-  return {
-    weightInput: null,
-    peeInputs: [],
-    poopInputs: [],
-    optionInputs: [],
-    stoolInputs: [],
-    attentionInputs: []
-  };
-}
-
-function getCheckedValue(inputs) {
+function getSelectedValue(inputs) {
   return inputs.find((input) => input.checked)?.value || null;
 }
 
@@ -362,7 +380,7 @@ function getLevelLabel(level) {
     urgent: "urgente"
   };
 
-  return labels[level] || "atencao";
+  return labels[level] || "atenção";
 }
 
 function getTitle(sheet) {
@@ -375,7 +393,7 @@ function getTitle(sheet) {
   }
 
   if (sheet.mode === "duration") {
-    return `Registrar ${LABELS[sheet.type]} por duracao`;
+    return `Registrar ${LABELS[sheet.type]} por duração`;
   }
 
   return `Registrar ${LABELS[sheet.type]}`;

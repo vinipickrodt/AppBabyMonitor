@@ -1,6 +1,7 @@
 import {
   DIAPER_AMOUNT_OPTIONS,
   DIAPER_ATTENTION_FLAGS,
+  DIAPER_CONTENT_OPTIONS,
   DIAPER_OPTIONS,
   EVENT_TYPES,
   FEEDING_SIDES,
@@ -20,6 +21,7 @@ const LABELS = {
 };
 const DIAPER_LABELS = new Map(DIAPER_OPTIONS.map((option) => [option.value, option.label]));
 const DIAPER_AMOUNT_LABELS = new Map(DIAPER_AMOUNT_OPTIONS.map((option) => [option.value, option.label]));
+const DIAPER_CONTENT_LABELS = new Map(DIAPER_CONTENT_OPTIONS.map((option) => [option.value, option.label]));
 const STOOL_LABELS = new Map(STOOL_APPEARANCE_OPTIONS.map((option) => [option.value, option.label]));
 const ATTENTION_LABELS = new Map(DIAPER_ATTENTION_FLAGS.map((option) => [option.value, option.label]));
 const FEEDING_LABELS = new Map(FEEDING_SIDES.map((option) => [option.value, option.label]));
@@ -102,15 +104,19 @@ function getDiaperDetail(entry) {
   const details = entry.details || {};
   const parts = [];
 
+  if (details.diaperContent) {
+    parts.push(DIAPER_CONTENT_LABELS.get(details.diaperContent) || details.diaperContent);
+  }
+
   if (details.diaperWeightGrams !== null && details.diaperWeightGrams !== undefined) {
     parts.push(`${details.diaperWeightGrams}g`);
   }
 
-  if (details.peeAmount && details.peeAmount !== "none") {
+  if (!details.diaperContent && details.peeAmount && details.peeAmount !== "none") {
     parts.push(`Xixi ${DIAPER_AMOUNT_LABELS.get(details.peeAmount) || details.peeAmount}`);
   }
 
-  if (details.poopAmount && details.poopAmount !== "none") {
+  if (!details.diaperContent && details.poopAmount && details.poopAmount !== "none") {
     parts.push(`Coco ${DIAPER_AMOUNT_LABELS.get(details.poopAmount) || details.poopAmount}`);
   }
 

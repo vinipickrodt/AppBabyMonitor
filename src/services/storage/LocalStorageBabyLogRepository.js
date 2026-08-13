@@ -204,7 +204,8 @@ function normalizeStoredDetails(type, details) {
     ...details,
     peeAmount: details.peeAmount || (legacyDiaperTypes.includes("pee") ? "normal" : "none"),
     poopAmount: details.poopAmount || (legacyDiaperTypes.includes("poop") ? "normal" : "none"),
-    diaperOptions: details.diaperOptions || legacyDiaperTypes.filter((type) => !["pee", "poop"].includes(type))
+    diaperOptions: details.diaperOptions || legacyDiaperTypes.filter((type) => !["pee", "poop"].includes(type)),
+    stoolConsistency: details.stoolConsistency || null
   };
 }
 

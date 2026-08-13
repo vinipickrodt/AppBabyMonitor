@@ -77,7 +77,8 @@ test("LocalStorageBabyLogRepository migra entradas e ativos legados de forma ide
     diaperTypes: ["pee", "poop", "rash"],
     peeAmount: "normal",
     poopAmount: "normal",
-    diaperOptions: ["rash"]
+    diaperOptions: ["rash"],
+    stoolConsistency: null
   });
   assert.deepEqual(activeRecords, {
     feeding: {

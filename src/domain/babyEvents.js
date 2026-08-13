@@ -46,6 +46,12 @@ export const STOOL_APPEARANCE_OPTIONS = [
   { value: "mucus", label: "Com muco" }
 ];
 
+export const STOOL_CONSISTENCY_OPTIONS = [
+  { value: "liquid", label: "Líquido" },
+  { value: "pasty", label: "Pastoso" },
+  { value: "grainy", label: "Granuloso" }
+];
+
 export const DIAPER_ATTENTION_FLAGS = [
   {
     value: "orange_brick",
@@ -204,6 +210,7 @@ function normalizeDiaperDetails(details) {
     poopAmount: normalizeOption(details.poopAmount || inferAmount(legacyDiaperTypes, "poop"), DIAPER_AMOUNT_OPTIONS, "none"),
     diaperOptions: normalizeMultiOption(details.diaperOptions || legacyDiaperTypes, DIAPER_OPTIONS),
     stoolAppearances: normalizeMultiOption(details.stoolAppearances, STOOL_APPEARANCE_OPTIONS),
+    stoolConsistency: normalizeOption(details.stoolConsistency, STOOL_CONSISTENCY_OPTIONS, null),
     attentionFlags: normalizeMultiOption(details.attentionFlags, DIAPER_ATTENTION_FLAGS)
   };
 }

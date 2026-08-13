@@ -5,6 +5,7 @@ import {
   DIAPER_OPTIONS,
   EVENT_TYPES,
   FEEDING_SIDES,
+  STOOL_CONSISTENCY_OPTIONS,
   STOOL_APPEARANCE_OPTIONS,
   getEventDate,
   getEventDurationMinutes,
@@ -23,6 +24,7 @@ const DIAPER_LABELS = new Map(DIAPER_OPTIONS.map((option) => [option.value, opti
 const DIAPER_AMOUNT_LABELS = new Map(DIAPER_AMOUNT_OPTIONS.map((option) => [option.value, option.label]));
 const DIAPER_CONTENT_LABELS = new Map(DIAPER_CONTENT_OPTIONS.map((option) => [option.value, option.label]));
 const STOOL_LABELS = new Map(STOOL_APPEARANCE_OPTIONS.map((option) => [option.value, option.label]));
+const STOOL_CONSISTENCY_LABELS = new Map(STOOL_CONSISTENCY_OPTIONS.map((option) => [option.value, option.label]));
 const ATTENTION_LABELS = new Map(DIAPER_ATTENTION_FLAGS.map((option) => [option.value, option.label]));
 const FEEDING_LABELS = new Map(FEEDING_SIDES.map((option) => [option.value, option.label]));
 const ENTRY_ICONS = {
@@ -48,12 +50,16 @@ export function renderEntryList(entries, { onRemove, onOpenHistory, limit = 5, i
               ...(isActionPending ? { disabled: "true" } : {})
             },
             events: { click: onOpenHistory }
-          }, [iconText("calendar", "Ver histórico")])
+          }, [iconText("chevronRight", "Ver todos")])
         : document.createDocumentFragment()
     ]),
     recentEntries.length
       ? createElement("ul", { className: "entry-list" }, recentEntries.map((entry) => renderEntry(entry, onRemove, isActionPending)))
-      : createElement("p", { className: "empty-state", text: "Ainda não há registros de hoje." })
+      : createElement("div", { className: "entry-empty-state" }, [
+          createIcon("clock", "icon entry-empty-state__icon"),
+          createElement("strong", { text: "Tudo pronto por aqui" }),
+          createElement("span", { text: "Seu primeiro registro aparecerá aqui." })
+        ])
   ]);
 }
 
@@ -133,6 +139,10 @@ function getDiaperDetail(entry) {
 
   if (details.stoolAppearances?.length) {
     parts.push(details.stoolAppearances.map((option) => STOOL_LABELS.get(option) || option).join(", "));
+  }
+
+  if (details.stoolConsistency) {
+    parts.push(STOOL_CONSISTENCY_LABELS.get(details.stoolConsistency) || details.stoolConsistency);
   }
 
   if (details.attentionFlags?.length) {

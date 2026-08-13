@@ -4,6 +4,7 @@ import { renderSummaryCards } from "../components/SummaryCards.js";
 import { renderQuickActions } from "../components/QuickActions.js";
 import { renderEntryList } from "../components/EntryList.js";
 import { renderActiveSessionCard } from "../components/ActiveSessionCard.js";
+import { renderDiaperRecordScreen } from "../components/DiaperRecordScreen.js";
 import { renderRecordSheet } from "../components/RecordSheet.js";
 import { renderSnackbar } from "../components/Snackbar.js";
 import { EVENT_TYPES, FEEDING_SIDES, getCurrentFeedingSide, getFeedingSessionMetrics } from "../domain/babyEvents.js";
@@ -66,34 +67,51 @@ export class App {
   }
 
   render() {
+    const isFocusedDiaperScreen = this.sheet?.type === EVENT_TYPES.DIAPER;
     const shouldShowNavigation = !this.sheet;
-    this.root.className = shouldShowNavigation ? "app-shell app-shell--with-nav" : "app-shell";
+    this.root.className = isFocusedDiaperScreen
+      ? "app-screen focused-screen"
+      : shouldShowNavigation
+        ? "app-screen app-screen--with-nav"
+        : "app-screen";
     this.root.toggleAttribute("aria-busy", this.state.isActionPending);
-    this.root.replaceChildren(
-      renderHeader(this.state.entries),
-      renderActiveSessionCard(this.state.activeRecords, {
-        now: this.state.now,
-        isActionPending: this.state.isActionPending,
-        onFinishRecord: (type) =>
-          this.runAction(() => this.babyLogService.finishRecord(type), {
-            successMessage: type === EVENT_TYPES.SLEEP ? "Sono encerrado." : "Mamada encerrada.",
-            undoEntry: true
-          }),
-        onPauseFeeding: () =>
-          this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING), {
-            successMessage: "Mamada pausada."
-          }),
-        onResumeFeeding: () =>
-          this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING), {
-            successMessage: "Mamada retomada."
-          }),
-        onSwitchFeedingSide: (side) =>
-          this.runAction(() => this.babyLogService.switchFeedingSide(side), {
-            successMessage: "Lado da mamada atualizado."
-          })
-      }),
-      this.renderCurrentRoute(),
-      this.sheet ? this.renderSheet() : document.createDocumentFragment(),
+    const children = [];
+
+    if (isFocusedDiaperScreen) {
+      children.push(this.renderFocusedDiaperScreen());
+    } else {
+      children.push(
+        renderHeader(this.state.entries, {
+          now: this.state.now,
+          onOpenSettings: () => this.navigate("profile")
+        }),
+        renderActiveSessionCard(this.state.activeRecords, {
+          now: this.state.now,
+          isActionPending: this.state.isActionPending,
+          onFinishRecord: (type) =>
+            this.runAction(() => this.babyLogService.finishRecord(type), {
+              successMessage: type === EVENT_TYPES.SLEEP ? "Sono encerrado." : "Mamada encerrada.",
+              undoEntry: true
+            }),
+          onPauseFeeding: () =>
+            this.runAction(() => this.babyLogService.pauseRecord(EVENT_TYPES.FEEDING), {
+              successMessage: "Mamada pausada."
+            }),
+          onResumeFeeding: () =>
+            this.runAction(() => this.babyLogService.resumeRecord(EVENT_TYPES.FEEDING), {
+              successMessage: "Mamada retomada."
+            }),
+          onSwitchFeedingSide: (side) =>
+            this.runAction(() => this.babyLogService.switchFeedingSide(side), {
+              successMessage: "Lado da mamada atualizado."
+            })
+        }),
+        this.renderCurrentRoute(),
+        this.sheet ? this.renderSheet() : document.createDocumentFragment()
+      );
+    }
+
+    children.push(
       renderSnackbar(this.state.snackbar, {
         onAction: () => this.handleSnackbarAction(),
         onClose: () => this.clearSnackbar()
@@ -105,6 +123,8 @@ export class App {
           })
         : document.createDocumentFragment()
     );
+
+    this.root.replaceChildren(...children);
     this.applyBusyState();
   }
 
@@ -226,8 +246,28 @@ export class App {
   }
 
   renderSheet() {
+    if (this.sheet?.type === EVENT_TYPES.DIAPER) {
+      return this.renderFocusedDiaperScreen();
+    }
+
     return renderRecordSheet(this.sheet, {
       activeRecord: this.state.activeRecords[this.sheet.type],
+      isActionPending: this.state.isActionPending,
+      onCancel: () => {
+        if (this.state.isActionPending) {
+          return;
+        }
+
+        this.sheet = null;
+        this.render();
+      },
+      onSubmit: (payload) => this.submitSheet(payload)
+    });
+  }
+
+  renderFocusedDiaperScreen() {
+    return renderDiaperRecordScreen({
+      now: this.state.now,
       isActionPending: this.state.isActionPending,
       onCancel: () => {
         if (this.state.isActionPending) {
@@ -319,7 +359,7 @@ export class App {
       return this.babyLogService.addInstantRecord(sheet.type, {
         notes: payload.notes,
         details: payload.details
-      });
+      }, payload.occurredAt ? new Date(payload.occurredAt) : new Date());
     }, {
       successMessage: getSheetSuccessMessage(sheet),
       undoEntry: sheet.mode !== "start",
@@ -497,6 +537,10 @@ function getRouteFromLocation() {
 }
 
 function getSheetSuccessMessage(sheet) {
+  if (sheet.type === EVENT_TYPES.DIAPER && sheet.mode === "instant") {
+    return "Fralda registrada.";
+  }
+
   if (sheet.mode === "start") {
     return sheet.type === EVENT_TYPES.SLEEP ? "Sono iniciado." : "Mamada iniciada.";
   }

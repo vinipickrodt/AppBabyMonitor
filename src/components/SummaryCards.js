@@ -7,7 +7,7 @@ export function renderSummaryCards(entries) {
   const sleepLabel = formatSleepDuration(stats.sleepMinutes);
 
   return createElement("section", { className: "summary-panel", attributes: { "aria-label": "Resumo do dia" } }, [
-    createElement("article", { className: "summary-card summary-card--compact" }, [
+    createElement("article", { className: "summary-card" }, [
       createElement("div", { className: "summary-card__header" }, [
         createElement("span", { className: "summary-card__label" }, [
           createIcon("calendar", "icon icon--badge"),
@@ -19,8 +19,7 @@ export function renderSummaryCards(entries) {
         renderMetric("Mamadas", String(stats.feedings), "bottle"),
         renderMetric("Fraldas", String(stats.diapers), "diaper"),
         renderMetric("Sono", sleepLabel, "moon")
-      ]),
-      createElement("p", { className: "summary-card__footnote", text: "Tudo registrado sem ruído visual." })
+      ])
     ])
   ]);
 }

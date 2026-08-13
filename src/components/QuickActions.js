@@ -30,7 +30,7 @@ export function renderQuickActions({
       feedingRecord,
       sleepRecord,
       isActionPending,
-      onStartFeeding,
+      onOpenSheet,
       onSwitchFeedingSide,
       onPauseFeeding,
       onResumeFeeding,
@@ -72,7 +72,7 @@ export function renderQuickActions({
         ...(isActionPending ? { disabled: "true" } : {})
       },
       events: { click: () => onOpenSheet({ type: EVENT_TYPES.FEEDING, mode: "duration" }) }
-    }, [iconText("edit", "Registro manual")])
+    }, [iconText("edit", "Registrar manualmente")])
   ]);
 }
 
@@ -80,7 +80,7 @@ function renderPrimaryAction({
   feedingRecord,
   sleepRecord,
   isActionPending,
-  onStartFeeding,
+  onOpenSheet,
   onSwitchFeedingSide,
   onPauseFeeding,
   onResumeFeeding,
@@ -88,9 +88,7 @@ function renderPrimaryAction({
 }) {
   if (!feedingRecord) {
     const sleepActive = Boolean(sleepRecord);
-    const intro = sleepActive
-      ? "Encerrar sono e iniciar mamada."
-      : "Escolha o lado e comece em um toque.";
+    const intro = sleepActive ? `Sono ativo desde ${formatTime(sleepRecord.startedAt)}` : "Toque para iniciar a mamada.";
 
     return createElement("article", { className: "quick-actions__card quick-actions__card--primary" }, [
       createElement("div", { className: "quick-actions__header" }, [
@@ -98,26 +96,16 @@ function renderPrimaryAction({
           createIcon("bottle", "icon icon--badge"),
           createElement("strong", { text: "Iniciar mamada" })
         ]),
-        createElement("span", { className: "quick-actions__description", text: sleepActive ? `Sono ativo desde ${formatTime(sleepRecord.startedAt)}` : intro })
+        createElement("span", { className: "quick-actions__description", text: intro })
       ]),
-      sleepActive
-        ? createElement("p", { className: "quick-actions__status", text: intro })
-        : document.createDocumentFragment(),
-      createElement("div", { className: "quick-actions__button-row" }, [
-        ...FEEDING_SIDES.map((option) =>
-          createElement("button", {
-            className: "secondary-button secondary-button--start",
-            attributes: {
-              type: "button",
-              ...(isActionPending ? { disabled: "true" } : {}),
-              title: sleepActive
-                ? `${intro} ${option.label.toLowerCase()}`
-                : option.label
-            },
-            events: { click: () => onStartFeeding(option.value) }
-          }, [iconText(option.value === "left" ? "left" : "right", sleepActive ? `${option.label}` : option.label)])
-        )
-      ])
+      createElement("button", {
+        className: "action-button action-button--primary quick-actions__primary-cta",
+        attributes: {
+          type: "button",
+          ...(isActionPending ? { disabled: "true" } : {})
+        },
+        events: { click: () => onOpenSheet({ type: EVENT_TYPES.FEEDING, mode: "start" }) }
+      }, [iconText("play", sleepActive ? "Escolher lado e iniciar" : "Iniciar mamada")])
     ]);
   }
 

@@ -194,6 +194,7 @@ test("BabyLogService registra fralda instantânea com notas e opções", async (
         poopAmount: "low",
         diaperOptions: ["leak", "invalid"],
         stoolAppearances: ["yellow_seedy", "watery", "invalid"],
+        stoolConsistency: "pasty",
         attentionFlags: ["orange_brick", "red_blood", "invalid"]
       }
     },
@@ -212,6 +213,7 @@ test("BabyLogService registra fralda instantânea com notas e opções", async (
     poopAmount: "low",
     diaperOptions: ["leak"],
     stoolAppearances: ["yellow_seedy", "watery"],
+    stoolConsistency: "pasty",
     attentionFlags: ["orange_brick", "red_blood"]
   });
 });
